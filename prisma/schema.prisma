@@ -89,8 +89,9 @@ model Profile {
     heightCm          int?  // store cm; convert in app to lbs (optional)
     weightKg          Decimal? @db.Decimal(6,2)
     experienceLevel   ExperienceLevel?
-      healthNotes       String?  // freeform; sensitive -> encryption
-    goalType       GoalType
+    healthNotes       String?  // freeform; sensitive -> encryption
+    goalType        GoalType?
+    unitSystem        UnitSystem?
     createdAt       DateTime @default(now())
     updatedAt       DateTime @updatedAt
 
@@ -101,7 +102,7 @@ model Profile {
 model Preference {
     userId String @id @default(uuid())
     timezone String default('America/New_York')
-    unitSystem UnitSystem default(UnitSystem.metric)
+    unitSystem UnitSystem? default(UnitSystem.metric)
     voiceEnabled Boolean default(true)
     ttsvoice String? // voice, id, name
     language String default('en')
@@ -126,4 +127,16 @@ model AvailabilityWindow {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, dayOfWeek])
+}
+
+model UserHealthCondition {
+    id String @id @default(uuid())
+    userId String
+    code String @unique // e.g., "LOW_BACK_PAIN"
+    name String
+    description String?
+    isContraindication Boolean @default(false)
+    createdAt DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
