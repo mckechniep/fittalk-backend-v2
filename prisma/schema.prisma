@@ -129,7 +129,7 @@ model AvailabilityWindow {
   @@index([userId, dayOfWeek])
 }
 
-model UserHealthCondition {
+model HealthCondition {
     id String @id @default(uuid())
     userId String
     code String @unique // e.g., "LOW_BACK_PAIN"
@@ -139,4 +139,17 @@ model UserHealthCondition {
     createdAt DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserHealthCondition {
+    id             String @id @default(uuid())
+    userId           String
+    healthConditionId String
+    notes            String?
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    condition HealthCondition @relation(fields: [healthConditionId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, healthConditionId])
+    @@index([userId])
 }
