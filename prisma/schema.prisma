@@ -1,222 +1,342 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
-model User{
-  id  String @id @default(uuid())
-  email String @unique
-  phone String? @unique
-  passwordHash String @db.VarChar(255) //null if SSO-only
-  createdAt DateTime @default(now())
-  updatedAt DateTime 
+// ==================== ENUMS ====================
 
-
-// Profile  and preferences
-profile Profile?
-preferences Preference?
-
-// auth sessions and providers
-sessions Session[]
-accounts AuthAccount[]
-
-// core App relations
-consultations Consultation[]
-goals UserGoal[]
-availabilities AvailabilityWindow[]
-workoutPlans WorkoutPlan[]
-workoutsLogged WorkoutLog[]
-metrics Metrics[]
-aiMessages AiMessage[]
-notifications Notification[]
-groceryList GroceryList[]
-macroTargets MacroTarget[]
-messagesReceived Message[]
-messagesSent Message[]
-
-//  // social - This is post-MVP -> swipe left/swipe right -> Accept -> Follow eachother during workout plan, etc.
-//   connectionsFrom  UserConnection[] @relation("UserConnectionsFrom")
-//   connectionsTo    UserConnection[] @relation("UserConnectionsTo")
-//   swipesMade       Swipe[]          @relation("UserSwipesFrom")
-//   swipesReceived   Swipe[]          @relation("UserSwipesTo")
-//   messagesReceived Message[]        @relation("UserMessagesTo")
-//   messagesSent     Message[]        @relation("UserMessagesFrom")
+enum Sex { 
+  male 
+  female 
+  other 
+  prefer_not_to_say 
 }
 
+enum ExperienceLevel { 
+  beginner 
+  novice 
+  intermediate 
+  advanced 
+  elite 
+}
 
-// AuthAccount
+enum UnitSystem { 
+  metric 
+  imperial 
+}
+
+enum GoalType { 
+  fat_loss 
+  muscle_gain 
+  performance 
+  maintenance 
+}
+
+enum GoalStatus { 
+  active 
+  paused 
+  achieved 
+  abandoned 
+}
+
+enum ConsultationStatus { 
+  pending 
+  completed 
+}
+
+enum MuscleGroup { 
+  chest 
+  back 
+  shoulders 
+  legs 
+  glutes 
+  arms 
+  core 
+  full_body 
+}
+
+enum Equipment { 
+  none 
+  dumbbell 
+  barbell 
+  kettlebell 
+  machine 
+  cable 
+  band 
+  bodyweight 
+  other 
+}
+
+enum PlanStatus { 
+  draft 
+  active 
+  archived 
+}
+
+enum SessionType { 
+  strength 
+  hypertrophy 
+  cardio 
+  mobility 
+  mixed 
+}
+
+enum NotificationType { 
+  reminder 
+  milestone 
+  plan_update 
+  ai_message 
+}
+
+enum ScheduledWorkoutStatus {
+  scheduled
+  in_progress
+  completed
+  skipped
+  cancelled
+}
+
+// ==================== CORE IDENTITY & AUTH ====================
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String?  @db.VarChar(255) // optional if using Supabase Auth only
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Profile and preferences
+  profile      Profile?
+  preferences  Preference?
+
+  // Auth sessions and providers
+  sessions     Session[]
+  accounts     AuthAccount[]
+
+  // Core app relations
+  devices              Device[]
+  consultations        ConsultationSession[]
+  goals                UserGoal[]
+  availabilities       AvailabilityWindow[]
+  workoutPlans         WorkoutPlan[]
+  scheduledWorkouts    ScheduledWorkout[]
+  liveWorkoutSessions  LiveWorkoutSession[]
+  workoutLogs          WorkoutLog[]
+  bodyMetrics          BodyMetric[]
+  personalRecords      PersonalRecord[]
+  aiMessages           AiMessage[]
+  aiRecommendations    AiRecommendation[]
+  notifications        Notification[]
+  groceryLists         GroceryList[]
+  macroTargets         MacroTarget[]
+  userHealthConditions UserHealthCondition[]
+  documents            Document[]
+  auditLogs            AuditLog[]
+
+  @@index([email])
+}
+
+// ==================== AUTH ====================
+
 model AuthAccount {
-    id                 String @id @default(uuid())
-  userId             String
-  provider           String
-  providerAccountId  String
-  accessToken        String?
-  refreshToken       String?
-  expiresAt          DateTime?
+  id                String    @id @default(uuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
 
-  user               User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
 }
 
-
-// Session
 model Session {
-  id           String   @id @default(uuid())
-  userId       String
-  jwtId        String   @unique
-  userAgent    String?
-  ip           String?
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
+  id        String   @id @default(uuid())
+  userId    String
+  jwtId     String   @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
-// Profile Preference   
-enum Sex { male female other prefer_not_to_say }
-enum ExperienceLevel { beginner novice intermediate advanced elite }
-enum UnitSystem { metric imperial }
-enum GoalType { weight_loss muscle_gain fitness }
+// ==================== PROFILE & PREFERENCES ====================
 
 model Profile {
-    userId            String @id @default(uuid())
-    firstname         String
-    lastname          String
-    sex               Sex?
-    heightCm          int?  // store cm; convert in app to lbs (optional)
-    weightKg          Decimal? @db.Decimal(6,2)
-    experienceLevel   ExperienceLevel?
-    healthNotes       String?  // freeform; sensitive -> encryption
-    goalType        GoalType?
-    unitSystem        UnitSystem?
-    createdAt       DateTime @default(now())
-    updatedAt       DateTime @updatedAt
+  userId          String          @id
+  firstname       String
+  lastname        String
+  sex             Sex?
+  heightCm        Int?
+  weightKg        Decimal?        @db.Decimal(6, 2)
+  experienceLevel ExperienceLevel?
+  healthNotes     String?
+  goalType        GoalType?
+  unitSystem      UnitSystem?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-    user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-    conditions        UserHealthCondition[]
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conditions UserHealthCondition[]
 }
 
-
-// Preferences
 model Preference {
-    userId String @id @default(uuid())
-    timezone String default('America/New_York')
-    unitSystem UnitSystem? default(UnitSystem.metric)
-    voiceEnabled Boolean default(true)
-    ttsvoice String? // voice, id, name
-    language String default('en')
-    notifPush Boolean default(true)
-    notifEmail Boolean default(false)
-    notifSms Boolean default(false)
-    created_at DateTime @default(now())
-    updated_at DateTime @updatedAt
+  userId       String      @id
+  timezone     String      @default("America/New_York")
+  unitSystem   UnitSystem? @default(metric)
+  voiceEnabled Boolean     @default(true)
+  ttsVoice     String?
+  language     String      @default("en")
+  notifPush    Boolean     @default(true)
+  notifEmail   Boolean     @default(false)
+  notifSms     Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ==================== DEVICES (Push Tokens) ====================
 
-// Availability windows
+model Device {
+  id         String    @id @default(uuid())
+  userId     String
+  platform   String    // "ios" | "android" | "web"
+  deviceId   String    @unique
+  pushToken  String?
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([pushToken])
+}
+
+// ==================== HEALTH CONDITIONS ====================
+
+model HealthCondition {
+  id                   String    @id @default(uuid())
+  code                 String    @unique // e.g., "LOW_BACK_PAIN"
+  name                 String
+  description          String?
+  isContraindication   Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  userConditions UserHealthCondition[]
+}
+
+model UserHealthCondition {
+  id                String   @id @default(uuid())
+  userId            String
+  healthConditionId String
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile   Profile         @relation(fields: [userId], references: [userId], onDelete: Cascade, map: "UserHealthCondition_profile_fkey")
+  condition HealthCondition @relation(fields: [healthConditionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, healthConditionId])
+  @@index([userId])
+  @@index([healthConditionId])
+}
+
+// ==================== AVAILABILITY ====================
+
 model AvailabilityWindow {
-    id String @id @default(uuid())
-    userId String
-    // Weekly recurring windows from consultation (work schedule + free time)
+  id        String   @id @default(uuid())
+  userId    String
   dayOfWeek Int      // 0=Sun ... 6=Sat
   startMin  Int      // minutes from 00:00 (e.g., 540 = 09:00)
   endMin    Int
-  priority  Int      @default(0) // to rank preferred times
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, dayOfWeek])
 }
 
-
-// Health conditions
-model HealthCondition {
-    id String @id @default(uuid())
-    userId String
-    code String @unique // e.g., "LOW_BACK_PAIN"
-    name String
-    description String?
-    isContraindication Boolean @default(false)
-    createdAt DateTime @default(now())
-
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model UserHealthCondition {
-    id             String @id @default(uuid())
-    userId           String
-    healthConditionId String
-    notes            String?
-
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-    condition HealthCondition @relation(fields: [healthConditionId], references: [id], onDelete: Cascade)
-
-    @@unique([userId, healthConditionId])
-    @@index([userId])
-}
-
-enum ConsultationStatus { pending completed }
+// ==================== CONSULTATION ====================
 
 model ConsultationSession {
-  id            String             @id @default(uuid())
+  id            String              @id @default(uuid())
   userId        String
-  status        ConsultationStatus @default(pending)
-  startedAt     DateTime           @default(now())
+  status        ConsultationStatus  @default(pending)
+  startedAt     DateTime            @default(now())
   completedAt   DateTime?
-
-  // Raw Q/A snapshot for audit—denormalize for speed; also store structured items below
   responsesJson Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers  ConsultationAnswer[]
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers ConsultationAnswer[]
 
   @@index([userId, status])
 }
 
 model ConsultationQuestion {
-  id          String @id @default(uuid())
-  code        String @unique // e.g., "GOAL_PRIMARY", "WORK_SCHEDULE"
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g., "GOAL_PRIMARY", "WORK_SCHEDULE"
   prompt      String
   helpText    String?
-  type        String // "single","multi","scale","time_range","number","text","enum"
-  optionsJson Json?  // for enums/scales
-  isActive    Boolean @default(true)
+  type        String   // "single","multi","scale","time_range","number","text","enum"
+  optionsJson Json?
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  answers ConsultationAnswer[]
 }
 
 model ConsultationAnswer {
-  id            String @id @default(uuid())
-  sessionId     String
-  questionId    String
-  valueJson     Json   // normalized in app; flexible for time ranges etc.
+  id         String   @id @default(uuid())
+  sessionId  String
+  questionId String
+  valueJson  Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  session       Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  question      ConsultationQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  session  ConsultationSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question ConsultationQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
   @@unique([sessionId, questionId])
   @@index([sessionId])
+  @@index([questionId])
 }
 
-model AiMessage {
-  id          String   @id @default(uuid())
-  userId      String
-  role        String   // "user" | "assistant" | "system"
-  content     String   // text transcript
-  meta        Json?    // tokens, model id, latency, etc.
-  createdAt   DateTime @default(now())
+// ==================== AI ORCHESTRATION ====================
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model AiMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  role      String   // "user" | "assistant" | "system"
+  content   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
 }
@@ -224,12 +344,464 @@ model AiMessage {
 model AiRecommendation {
   id          String   @id @default(uuid())
   userId      String
-  context     String?  // e.g., "plan_adjustment","exercise_substitution"
+  context     String?
   rationale   String?
-  payloadJson Json     // diff or full recommendation object
+  payloadJson Json
   createdAt   DateTime @default(now())
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
 }
+
+// ==================== RAG & EMBEDDINGS (pgvector) ====================
+
+model Document {
+  id        String   @id @default(uuid())
+  userId    String?
+  source    String   // "profile" | "consultation" | "workout_history" | "knowledge_base"
+  sourceId  String?
+  title     String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks DocumentChunk[]
+
+  @@index([userId, source])
+  @@index([source, sourceId])
+}
+
+model DocumentChunk {
+  id         String   @id @default(uuid())
+  documentId String
+  content    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  document   Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  embeddings Embedding[]
+
+  @@index([documentId])
+}
+
+model Embedding {
+  id        String                           @id @default(uuid())
+  chunkId   String
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                         @default(now())
+
+  chunk DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@index([chunkId])
+}
+
+// ==================== GOALS ====================
+
+model UserGoal {
+  id              String     @id @default(uuid())
+  userId          String
+  type            GoalType
+  description     String?
+  targetDate      DateTime?
+  startWeightKg   Decimal?   @db.Decimal(6, 2)
+  targetWeightKg  Decimal?   @db.Decimal(6, 2)
+  status          GoalStatus @default(active)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+// ==================== NUTRITION ====================
+
+model MacroTarget {
+  id        String    @id @default(uuid())
+  userId    String
+  calories  Int?
+  proteinG  Int?
+  carbsG    Int?
+  fatsG     Int?
+  startsOn  DateTime  @default(now())
+  endsOn    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startsOn])
+}
+
+model FoodItem {
+  id        String   @id @default(uuid())
+  name      String
+  brand     String?
+  servingG  Int?
+  calories  Int
+  proteinG  Decimal  @db.Decimal(6, 2)
+  carbsG    Decimal  @db.Decimal(6, 2)
+  fatsG     Decimal  @db.Decimal(6, 2)
+  tags      String[] @default([])
+  source    String?  // "usda","custom","ai"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  groceryItems GroceryItem[]
+
+  @@index([name])
+}
+
+model GroceryList {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String   @default("Weekly Grocery List")
+  weekOf    DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items GroceryItem[]
+
+  @@index([userId, weekOf])
+}
+
+model GroceryItem {
+  id         String   @id @default(uuid())
+  listId     String
+  foodItemId String?
+  name       String
+  quantity   String?
+  isChecked  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  list     GroceryList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  foodItem FoodItem?   @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  @@index([listId])
+  @@index([foodItemId])
+}
+
+// ==================== EXERCISES ====================
+
+model Exercise {
+  id                    String        @id @default(uuid())
+  slug                  String        @unique // e.g., "barbell_back_squat"
+  name                  String
+  primaryGroup          MuscleGroup
+  secondaryGroups       MuscleGroup[]
+  equipment             Equipment
+  instructions          String?
+  media                 Json?
+  contraindicationCodes String[]      @default([])
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  variants        ExerciseVariant[]
+  workoutItems    WorkoutItem[]
+  workoutLogs     WorkoutLog[]
+  personalRecords PersonalRecord[]
+
+  @@index([slug])
+  @@index([primaryGroup])
+}
+
+model ExerciseVariant {
+  id               String   @id @default(uuid())
+  exerciseId       String
+  name             String
+  substitutionTags String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
+}
+
+// ==================== WORKOUT PROGRAMS ====================
+
+model WorkoutPlan {
+  id         String     @id @default(uuid())
+  userId     String
+  title      String
+  status     PlanStatus @default(active)
+  weeks      Int        @default(4)
+  sourceJson Json?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  days              WorkoutDay[]
+  scheduledWorkouts ScheduledWorkout[]
+  workoutLogs       WorkoutLog[]
+  liveSessions      LiveWorkoutSession[]
+
+  @@index([userId, status])
+}
+
+model WorkoutDay {
+  id         String      @id @default(uuid())
+  planId     String
+  weekNumber Int
+  dayNumber  Int         // 1..7
+  focus      SessionType
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  plan              WorkoutPlan          @relation(fields: [planId], references: [id], onDelete: Cascade)
+  items             WorkoutItem[]
+  scheduledWorkouts ScheduledWorkout[]
+  workoutLogs       WorkoutLog[]
+  liveSessions      LiveWorkoutSession[]
+
+  @@unique([planId, weekNumber, dayNumber])
+  @@index([planId])
+}
+
+model WorkoutItem {
+  id           String   @id @default(uuid())
+  dayId        String
+  order        Int
+  exerciseId   String
+  targetSets   Int
+  targetReps   Int?
+  targetRir    Decimal? @db.Decimal(3, 1) // RIR (Reps In Reserve) per requirements
+  targetWeight Decimal? @db.Decimal(6, 2)
+  tempo        String?  // e.g., "3-1-1"
+  restSec      Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  day         WorkoutDay     @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  exercise    Exercise       @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  workoutLogs WorkoutLog[]
+
+  @@index([dayId])
+  @@index([exerciseId])
+}
+
+// ==================== WORKOUT SCHEDULING ====================
+
+model ScheduledWorkout {
+  id          String                  @id @default(uuid())
+  userId      String
+  planId      String?
+  dayId       String?
+  scheduledAt DateTime
+  status      ScheduledWorkoutStatus  @default(scheduled)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan WorkoutPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  day  WorkoutDay? @relation(fields: [dayId], references: [id], onDelete: SetNull)
+
+  @@index([userId, scheduledAt])
+  @@index([planId])
+  @@index([dayId])
+}
+
+// ==================== REAL-TIME WORKOUT SESSION ====================
+
+model LiveWorkoutSession {
+  id              String    @id @default(uuid())
+  userId          String
+  planId          String?
+  dayId           String?
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  stateJson       Json?     // current exercise, set, rest timer, etc.
+  wsConnectionId  String?
+  heartbeatAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan WorkoutPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  day  WorkoutDay? @relation(fields: [dayId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([wsConnectionId])
+  @@index([heartbeatAt])
+}
+
+// ==================== WORKOUT LOGGING ====================
+
+model WorkoutLog {
+  id          String   @id @default(uuid())
+  userId      String
+  planId      String?
+  dayId       String?
+  itemId      String?
+  exerciseId  String
+  performedAt DateTime @default(now())
+  durationMin Int?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     WorkoutPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  day      WorkoutDay?  @relation(fields: [dayId], references: [id], onDelete: SetNull)
+  item     WorkoutItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  exercise Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  sets     WorkoutSet[]
+
+  @@index([userId, performedAt])
+  @@index([planId])
+  @@index([dayId])
+  @@index([itemId])
+  @@index([exerciseId])
+}
+
+model WorkoutSet {
+  id        String   @id @default(uuid())
+  logId     String
+  setNumber Int
+  reps      Int?
+  weightKg  Decimal? @db.Decimal(6, 2)
+  rir       Decimal? @db.Decimal(3, 1) // RIR per requirements
+  completed Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  log WorkoutLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+
+  @@unique([logId, setNumber])
+  @@index([logId])
+}
+
+// ==================== METRICS & RECORDS ====================
+
+model BodyMetric {
+  id         String   @id @default(uuid())
+  userId     String
+  measuredAt DateTime @default(now())
+  weightKg   Decimal? @db.Decimal(6, 2)
+  bodyFatPct Decimal? @db.Decimal(4, 1)
+  chestCm    Decimal? @db.Decimal(5, 1)
+  waistCm    Decimal? @db.Decimal(5, 1)
+  hipsCm     Decimal? @db.Decimal(5, 1)
+  notes      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, measuredAt])
+}
+
+model PersonalRecord {
+  id         String   @id @default(uuid())
+  userId     String
+  exerciseId String
+  reps       Int?
+  weightKg   Decimal? @db.Decimal(6, 2)
+  oneRmKg    Decimal? @db.Decimal(6, 2)
+  achievedAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, exerciseId, reps])
+  @@index([userId, achievedAt])
+  @@index([exerciseId])
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id          String            @id @default(uuid())
+  userId      String
+  type        NotificationType
+  title       String
+  body        String?
+  sentAt      DateTime?
+  scheduledAt DateTime?
+  meta        Json?
+  createdAt   DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scheduledAt])
+  @@index([sentAt])
+}
+
+// ==================== AUDIT & OBSERVABILITY ====================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  prevValues Json?
+  newValues  Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+}
+
+// ==================== SOCIAL (POST-MVP - COMMENTED OUT) ====================
+
+// enum ConnectionStatus { 
+//   pending 
+//   accepted 
+//   blocked 
+// }
+
+// enum SwipeDecision { 
+//   like 
+//   pass 
+// }
+
+// model UserConnection {
+//   id         String           @id @default(uuid())
+//   fromUserId String
+//   toUserId   String
+//   status     ConnectionStatus @default(pending)
+//   createdAt  DateTime         @default(now())
+
+//   fromUser User @relation("UserConnectionsFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+//   toUser   User @relation("UserConnectionsTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+//   @@unique([fromUserId, toUserId])
+//   @@index([toUserId, status])
+// }
+
+// model Swipe {
+//   id         String        @id @default(uuid())
+//   fromUserId String
+//   toUserId   String
+//   decision   SwipeDecision
+//   createdAt  DateTime      @default(now())
+
+//   fromUser User @relation("UserSwipesFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+//   toUser   User @relation("UserSwipesTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+//   @@unique([fromUserId, toUserId])
+//   @@index([toUserId])
+// }
+
+// model Message {
+//   id         String   @id @default(uuid())
+//   fromUserId String
+//   toUserId   String
+//   content    String
+//   sentAt     DateTime @default(now())
+//   readAt     DateTime?
+
+//   fromUser User @relation("UserMessagesFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+//   toUser   User @relation("UserMessagesTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+//   @@index([toUserId, sentAt])
+//   @@index([fromUserId])
+// }
