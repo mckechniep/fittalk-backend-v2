@@ -14,4 +14,39 @@ model User{
   passwordHash String @db.VarChar(255) //null if SSO-only
   createdAt DateTime @default(now())
   updatedAt DateTime 
+
+
+// Profile  and preferences
+profile Profile?
+preferences Preference?
+
+// auth sessions and providers
+authSessions AuthSession[]
+authAccounts AuthAccount[]
+
+// core App relations
+consultations Consultation[]
+goals UserGoal[]
+availabilities AvailabilityWindow[]
+workoutPlans WorkoutPlan[]
+workoutsLogged WorkoutLog[]
+metrics Metrics[]
+aiMessages AiMessage[]
+notifications Notification[]
+groceryList GroceryList[]
+macroTargets MacroTarget[]
+messagesReceived Message[]
+messagesSent Message[]
+
+//  // social
+//   connectionsFrom  UserConnection[] @relation("UserConnectionsFrom")
+//   connectionsTo    UserConnection[] @relation("UserConnectionsTo")
+//   swipesMade       Swipe[]          @relation("UserSwipesFrom")
+//   swipesReceived   Swipe[]          @relation("UserSwipesTo")
+//   messagesReceived Message[]        @relation("UserMessagesTo")
+//   messagesSent     Message[]        @relation("UserMessagesFrom")
+}
+
+model AuthAccount {
+    
 }
