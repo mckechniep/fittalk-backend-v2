@@ -21,8 +21,8 @@ profile Profile?
 preferences Preference?
 
 // auth sessions and providers
-authSessions AuthSession[]
-authAccounts AuthAccount[]
+sessions Session[]
+accounts AuthAccount[]
 
 // core App relations
 consultations Consultation[]
@@ -38,7 +38,7 @@ macroTargets MacroTarget[]
 messagesReceived Message[]
 messagesSent Message[]
 
-//  // social
+//  // social - This is post-MVP -> swipe left/swipe right -> Accept -> Follow eachother during workout plan, etc.
 //   connectionsFrom  UserConnection[] @relation("UserConnectionsFrom")
 //   connectionsTo    UserConnection[] @relation("UserConnectionsTo")
 //   swipesMade       Swipe[]          @relation("UserSwipesFrom")
@@ -48,5 +48,32 @@ messagesSent Message[]
 }
 
 model AuthAccount {
-    
+    id                 String @id @default(uuid())
+  userId             String
+  provider           String
+  providerAccountId  String
+  accessToken        String?
+  refreshToken       String?
+  expiresAt          DateTime?
+
+  user               User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  jwtId        String   @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+
