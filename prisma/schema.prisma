@@ -113,3 +113,17 @@ model Preference {
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model AvailabilityWindow {
+    id String @id @default(uuid())
+    userId String
+    // Weekly recurring windows from consultation (work schedule + free time)
+  dayOfWeek Int      // 0=Sun ... 6=Sat
+  startMin  Int      // minutes from 00:00 (e.g., 540 = 09:00)
+  endMin    Int
+  priority  Int      @default(0) // to rank preferred times
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
