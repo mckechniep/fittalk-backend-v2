@@ -76,4 +76,7 @@ model Session {
   @@index([userId])
 }
 
-
+enum Sex { male female other prefer_not_to_say }
+enum ExperienceLevel { beginner novice intermediate advanced elite }
+enum UnitSystem { metric imperial }
+enum GoalType { weight_loss muscle_gain fitness }
