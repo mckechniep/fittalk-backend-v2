@@ -47,6 +47,8 @@ messagesSent Message[]
 //   messagesSent     Message[]        @relation("UserMessagesFrom")
 }
 
+
+// AuthAccount
 model AuthAccount {
     id                 String @id @default(uuid())
   userId             String
@@ -62,6 +64,8 @@ model AuthAccount {
   @@index([userId])
 }
 
+
+// Session
 model Session {
   id           String   @id @default(uuid())
   userId       String
@@ -76,6 +80,7 @@ model Session {
   @@index([userId])
 }
 
+// Profile Preference   
 enum Sex { male female other prefer_not_to_say }
 enum ExperienceLevel { beginner novice intermediate advanced elite }
 enum UnitSystem { metric imperial }
@@ -99,6 +104,8 @@ model Profile {
     conditions        UserHealthCondition[]
 }
 
+
+// Preferences
 model Preference {
     userId String @id @default(uuid())
     timezone String default('America/New_York')
@@ -115,6 +122,8 @@ model Preference {
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+
+// Availability windows
 model AvailabilityWindow {
     id String @id @default(uuid())
     userId String
@@ -129,6 +138,8 @@ model AvailabilityWindow {
   @@index([userId, dayOfWeek])
 }
 
+
+// Health conditions
 model HealthCondition {
     id String @id @default(uuid())
     userId String
@@ -152,4 +163,73 @@ model UserHealthCondition {
 
     @@unique([userId, healthConditionId])
     @@index([userId])
+}
+
+enum ConsultationStatus { pending completed }
+
+model ConsultationSession {
+  id            String             @id @default(uuid())
+  userId        String
+  status        ConsultationStatus @default(pending)
+  startedAt     DateTime           @default(now())
+  completedAt   DateTime?
+
+  // Raw Q/A snapshot for audit—denormalize for speed; also store structured items below
+  responsesJson Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers  ConsultationAnswer[]
+
+  @@index([userId, status])
+}
+
+model ConsultationQuestion {
+  id          String @id @default(uuid())
+  code        String @unique // e.g., "GOAL_PRIMARY", "WORK_SCHEDULE"
+  prompt      String
+  helpText    String?
+  type        String // "single","multi","scale","time_range","number","text","enum"
+  optionsJson Json?  // for enums/scales
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ConsultationAnswer {
+  id            String @id @default(uuid())
+  sessionId     String
+  questionId    String
+  valueJson     Json   // normalized in app; flexible for time ranges etc.
+
+  session       Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question      ConsultationQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, questionId])
+  @@index([sessionId])
+}
+
+model AiMessage {
+  id          String   @id @default(uuid())
+  userId      String
+  role        String   // "user" | "assistant" | "system"
+  content     String   // text transcript
+  meta        Json?    // tokens, model id, latency, etc.
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AiRecommendation {
+  id          String   @id @default(uuid())
+  userId      String
+  context     String?  // e.g., "plan_adjustment","exercise_substitution"
+  rationale   String?
+  payloadJson Json     // diff or full recommendation object
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
