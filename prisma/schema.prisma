@@ -80,3 +80,20 @@ enum Sex { male female other prefer_not_to_say }
 enum ExperienceLevel { beginner novice intermediate advanced elite }
 enum UnitSystem { metric imperial }
 enum GoalType { weight_loss muscle_gain fitness }
+
+model Profile {
+    userId            String @id @default(uuid())
+    firstname         String
+    lastname          String
+    sex               Sex?
+    heightCm          int?  // store cm; convert in app to lbs (optional)
+    weightKg          Decimal? @db.Decimal(6,2)
+    experienceLevel   ExperienceLevel?
+      healthNotes       String?  // freeform; sensitive -> encryption
+    goalType       GoalType
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+
+    user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    conditions        UserHealthCondition[]
+}
