@@ -1,6 +1,6 @@
 // dtos/create-consultation.dto.ts
-import { IsOptional, IsArray, ValidateNested } from 'class-validator'
-import { Type } from 'class-validator'
+import { IsOptional, IsArray, ValidateNested, IsString, IsNotEmpty } from 'class-validator'
+import { Type } from 'class-transformer'
 
 /**
  * Creates a new consultation session.
@@ -12,7 +12,7 @@ export class CreateConsultationDto {
     @IsArray()
     @ValidateNested( { each: true} )
     @Type(() => ConsultationAnswerDto)
-    answers?: ConsultationAnswerDto
+    answers?: ConsultationAnswerDto[]
 
 }
 
