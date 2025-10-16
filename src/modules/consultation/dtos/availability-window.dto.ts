@@ -38,4 +38,34 @@ export class AvailabilityWindowDto {
 @Min(0)
 @Max(1439)
 startMin: number
+
+/**
+   * End time in minutes from midnight (0-1439).
+   * Must be greater than startMin (validated in service layer to avoid circular DTO dependency).
+   * 
+   * Note: Does NOT support overnight windows (e.g., 11 PM - 2 AM).
+   * For overnight, create two windows: 
+   * - Day 1: 23:00 (1380) - 23:59 (1439)
+   * - Day 2: 00:00 (0) - 02:00 (120)
+   */
+
+@IsInt()
+@Min(0)
+@Max(1439)
+endMin: number
+
+/**
+ * Priorty ranking for scheduling algo.
+ * Higher values = more preferred times for workouts.
+ * 
+ * Use cases:
+ * - 0 = Available but not ideal
+ * - 1 = Preferred Time
+ * - 2 = Most Preferred Time
+ */
+@IsInt()
+@Min(0)
+@Max(1439)
+@IsOptional()
+priority?: number
 }
