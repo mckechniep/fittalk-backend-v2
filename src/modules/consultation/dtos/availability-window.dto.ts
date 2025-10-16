@@ -55,7 +55,7 @@ startMin: number
 endMin: number
 
 /**
- * Priority ranking for scheduling algo.
+ * Priority ranking for scheduling algorithm.
  * Higher values = more preferred times for workouts.
  * 
  * Use cases:
@@ -123,7 +123,7 @@ export class AvailabilityWindowResponseDto {
  * Optional: Delete individual window by ID.
  * Use case: User wants to remove one specific time block without re-sending full schedule.
  */
-export class DeleteAvailabilityWindow {
+export class DeleteAvailabilityDto {
     @IsUUID()
     id: string
 }
