@@ -19,16 +19,16 @@ export class ConsultationResponseDto {
 @Expose()
 id: string
 @Expose()
-userId: String
+userId: string
 @Expose()
 status: 'pending' | 'completed'
 @Expose()
 startedAt: Date
 @Expose()
-completedAt: Date
+completedAt: Date | null
 @Expose()
-@Type(() => ConsultationResponseDto)
-answer: ConsultationResponseDto[]
+@Type(() => ConsultationAnswerResponseDto)
+answer: ConsultationAnswerResponseDto[]
 
 
 @Expose()
