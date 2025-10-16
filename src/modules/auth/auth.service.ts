@@ -1,3 +1,4 @@
+// src/modules/auth/auth.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -37,18 +38,51 @@ export class AuthService {
 
   /**
    * Create or update user profile
+   * For CREATE: firstname and lastname are required
+   * For UPDATE: only provided fields are updated
    */
   async createOrUpdateProfile(userId: string, dto: CreateProfileDto | UpdateProfileDto) {
-    const profile = await this.prisma.profile.upsert({
+    // Check if we're doing a create or update by checking if profile exists
+    const existingProfile = await this.prisma.profile.findUnique({
       where: { userId },
-      create: {
-        userId,
-        ...dto,
-      },
-      update: dto,
     });
 
-    return profile;
+    if (existingProfile) {
+      // UPDATE: only update provided fields
+      const profile = await this.prisma.profile.update({
+        where: { userId },
+        data: {
+          ...(dto.firstname !== undefined && { firstname: dto.firstname }),
+          ...(dto.lastname !== undefined && { lastname: dto.lastname }),
+          ...(dto.sex !== undefined && { sex: dto.sex }),
+          ...(dto.heightCm !== undefined && { heightCm: dto.heightCm }),
+          ...(dto.weightKg !== undefined && { weightKg: dto.weightKg }),
+          ...(dto.experienceLevel !== undefined && { experienceLevel: dto.experienceLevel }),
+          ...(dto.healthNotes !== undefined && { healthNotes: dto.healthNotes }),
+          ...(dto.goalType !== undefined && { goalType: dto.goalType }),
+          ...(dto.unitSystem !== undefined && { unitSystem: dto.unitSystem }),
+        },
+      });
+      return profile;
+    } else {
+      // CREATE: firstname and lastname are required
+      const createDto = dto as CreateProfileDto;
+      const profile = await this.prisma.profile.create({
+        data: {
+          userId,
+          firstname: createDto.firstname,
+          lastname: createDto.lastname,
+          sex: createDto.sex,
+          heightCm: createDto.heightCm,
+          weightKg: createDto.weightKg,
+          experienceLevel: createDto.experienceLevel,
+          healthNotes: createDto.healthNotes,
+          goalType: createDto.goalType,
+          unitSystem: createDto.unitSystem,
+        },
+      });
+      return profile;
+    }
   }
 
   /**
@@ -116,11 +150,14 @@ export class AuthService {
   /**
    * Register or update a device for push notifications
    */
-  async registerDevice(userId: string, deviceData: {
-    platform: string;
-    deviceId: string;
-    pushToken?: string;
-  }) {
+  async registerDevice(
+    userId: string,
+    deviceData: {
+      platform: string;
+      deviceId: string;
+      pushToken?: string;
+    },
+  ) {
     const device = await this.prisma.device.upsert({
       where: { deviceId: deviceData.deviceId },
       create: {

@@ -22,7 +22,7 @@ async function bootstrap() {
 
   // Get config service
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('app.port');
+  const port = configService.get<number>('app.port') ?? 3000;
   const corsOrigins = configService.get<string[]>('app.corsOrigin');
 
   // Security middleware
