@@ -52,4 +52,49 @@ questionId: string
    * Full question details embedded for convenience.
    * Alternative: Client could fetch questions separately, but this reduces round trips.
    */
+  @Expose()
+  @Type(() => QuestionDetailsDto)
+  question: QuestionDetailsDto;
+
+
+/**
+   * User's answer value - shape depends on question.type.
+   * See CreateConsultationDto for value format documentation.
+   */
+  @Expose()
+  value: unknown;
+
+  @Expose()
+  createdAt: Date;
+
+  @Expose()
+  updatedAt: Date;
+}
+
+/**
+ * Embedded question details within answer response.
+ * Subset of ConsultationQuestion model - only client-needed fields.
+ */
+export class QuestionDetailsDto {
+  @Expose()
+  id: string;
+
+  @Expose()
+  code: string;
+
+  @Expose()
+  prompt: string;
+
+  @Expose()
+  helpText: string | null;
+
+  @Expose()
+  type: string;
+
+  /**
+   * Options for enum/scale/multi questions.
+   * Example: ["fat_loss", "muscle_gain", "performance"]
+   */
+  @Expose()
+  optionsJson: unknown | null;
 }
