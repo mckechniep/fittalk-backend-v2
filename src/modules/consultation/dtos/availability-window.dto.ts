@@ -1,5 +1,5 @@
 // dtos/availability-window.dto.ts
-import { IsInt, Min, Max, IsArray, ValidateNested, IsOptional, IsString, IsUUID } from 'class-validator'
+import { IsInt, Min, Max, IsArray, ValidateNested, IsOptional, IsUUID } from 'class-validator'
 import { Type, Expose } from 'class-transformer'
 
 /**
@@ -55,7 +55,7 @@ startMin: number
 endMin: number
 
 /**
- * Priorty ranking for scheduling algo.
+ * Priority ranking for scheduling algo.
  * Higher values = more preferred times for workouts.
  * 
  * Use cases:
@@ -65,7 +65,65 @@ endMin: number
  */
 @IsInt()
 @Min(0)
-@Max(1439)
+@Max(10)
 @IsOptional()
 priority?: number
+}
+
+/**
+ * Batch create/update availability windows.
+ * Replaces ALL existing windows for the user (NOT incremental).
+ * 
+ * Design rationale:
+ * - "Replace all" is simpler than managing adds/updates/deletes separately
+ * - Mobile typically sends full weekly schedule (easier UX)
+ * - Service wraps in transaction: delete existing → insert new
+ * - Prevents partial state bugs from failed incremental updates
+ * 
+ * Use cases:
+ * - Initial onboarding: user sets up weekly schedule
+ * - Schedule change: user updates availability (e.g., new work hours)
+ * - Consultation flow: availability submitted after goal-setting
+ */
+
+export class UpsertAvailabilityDto {
+/**
+   * Full set of availability windows.
+   * Empty array = user has no regular availability (on-demand workouts only).
+   */
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AvailabilityWindowDto)
+  windows: AvailabilityWindowDto[]
+}
+/**
+ * Response DTO for availability windows.
+ * Includes database ID for potential individual deletion.
+ */
+
+export class AvailabilityWindowResponseDto {
+    @Expose()
+    id: string
+    @Expose()
+    userId: string
+    @Expose()
+    dayOfWeek: number
+    @Expose()
+    startMin: number
+    @Expose()
+    endMin: number
+    @Expose()
+    priority: number
+    @Expose()
+    createdAt: Date
+    @Expose()
+    updatedAt: Date
+}
+/**
+ * Optional: Delete individual window by ID.
+ * Use case: User wants to remove one specific time block without re-sending full schedule.
+ */
+export class DeleteAvailabilityWindow {
+    @IsUUID()
+    id: string
 }
