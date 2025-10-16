@@ -1,9 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { AuthenticatedUser } from './strategies/jwt.strategy';
 
 @Injectable()
 export class AuthService {
@@ -39,7 +38,7 @@ export class AuthService {
   /**
    * Create or update user profile
    */
-  async createOrUpdateProfile(userId: string, dto: CreateProfileDto) {
+  async createOrUpdateProfile(userId: string, dto: CreateProfileDto | UpdateProfileDto) {
     const profile = await this.prisma.profile.upsert({
       where: { userId },
       create: {
@@ -93,14 +92,23 @@ export class AuthService {
   /**
    * Revoke all sessions except the current one
    */
-  async revokeAllOtherSessions(userId: string, currentSessionId: string) {
-    await this.prisma.session.updateMany({
-      where: {
-        userId,
-        jwtId: { not: currentSessionId },
-      },
-      data: { expiresAt: new Date() },
-    });
+  async revokeAllOtherSessions(userId: string, currentSessionId?: string) {
+    if (!currentSessionId) {
+      // If no current session provided, revoke all sessions
+      await this.prisma.session.updateMany({
+        where: { userId },
+        data: { expiresAt: new Date() },
+      });
+    } else {
+      // Revoke all except current
+      await this.prisma.session.updateMany({
+        where: {
+          userId,
+          jwtId: { not: currentSessionId },
+        },
+        data: { expiresAt: new Date() },
+      });
+    }
 
     return { message: 'All other sessions revoked successfully' };
   }

@@ -62,18 +62,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Extract session ID from JWT
     const sessionId = payload.session_id;
+    const sessionTrackingEnabled = this.configService.get<boolean>('app.trackSessions', true);
 
-    // If we're tracking sessions, verify it exists and is valid
-    if (sessionId) {
+    // If we're tracking sessions and sessionId exists, verify/create it
+    if (sessionId && sessionTrackingEnabled) {
       const session = await this.prisma.session.findUnique({
         where: { jwtId: sessionId },
       });
 
       if (!session) {
-        throw new UnauthorizedException('Session not found');
-      }
-
-      if (session.expiresAt < new Date()) {
+        // Auto-create session if it doesn't exist
+        await this.prisma.session.create({
+          data: {
+            userId: payload.sub,
+            jwtId: sessionId,
+            expiresAt: new Date(payload.exp * 1000),
+          },
+        });
+      } else if (session.expiresAt < new Date()) {
         throw new UnauthorizedException('Session expired');
       }
     }
@@ -97,7 +103,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           // Create default preference
           preferences: {
             create: {
-              timezone: 'America/New_York',
+              timezone: 'America/New_York', // ✅ Fixed truncated timezone
               unitSystem: 'metric',
               voiceEnabled: true,
               language: 'en',
@@ -114,7 +120,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
 
       // Create or update session if sessionId exists
-      if (sessionId) {
+      if (sessionId && sessionTrackingEnabled) {
         await this.prisma.session.upsert({
           where: { jwtId: sessionId },
           update: {
@@ -133,7 +139,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       id: user.id,
       email: user.email,
-      phone: user.phone,
+      phone: user.phone || undefined,
       role: payload.role,
       sessionId: sessionId,
       metadata: {

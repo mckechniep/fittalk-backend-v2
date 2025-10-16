@@ -8,4 +8,5 @@ export default registerAs('app', () => ({
     ttl: parseInt(process.env.THROTTLE_TTL, 10) || 60,
     limit: parseInt(process.env.THROTTLE_LIMIT, 10) || 10,
   },
+  trackSessions: process.env.TRACK_SESSIONS !== 'false', // Default true
 }));
