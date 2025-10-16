@@ -41,3 +41,15 @@ updatedAt: Date
  * Individual answer in consultation response.
  * Includes full question details to avoid client needing separate question lookup.
  */
+export class ConsultationAnswerResponseDto {
+@Expose()
+id: string
+
+@Expose()
+questionId: string
+
+/**
+   * Full question details embedded for convenience.
+   * Alternative: Client could fetch questions separately, but this reduces round trips.
+   */
+}
