@@ -51,9 +51,9 @@ export class AuthService {
       const profile = await this.prisma.profile.update({
         where: { userId },
         data: {
-          /* If you see errors here Marquise, it's probably because Prisma schema defines the enums,
+          /* If you see errors here it's probably because Prisma schema defines the enums,
           so they're not available in TypeScript until the Prisma client needs to be regenerated. */
-          // pnpm prisma generate -> fixed these errors for me
+          // pnpm prisma generate -> fixed these errors
           ...(dto.firstname !== undefined && { firstname: dto.firstname }),
           ...(dto.lastname !== undefined && { lastname: dto.lastname }),
           ...(dto.sex !== undefined && { sex: dto.sex }),

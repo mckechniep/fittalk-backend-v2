@@ -14,6 +14,7 @@ import {
     ParseUUIDPipe,
 } from '@nestjs/common'
 import { ConsultationService } from './consultation.service'
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CreateConsultationDto,
@@ -21,18 +22,16 @@ import {
 } from './dtos/create-consultation.dto';
 import { UpdateConsultationDto } from './dtos/update-consultation.dto';
 import { ConsultationResponseDto } from './dtos/consultation-response.dto';
-import {
-  UpsertAvailabilityDto,
-  AvailabilityWindowResponseDto,
-  DeleteAvailabilityDto,
-} from './dtos/availability-window.dto';
+
 
 
 /**
- * Consultation & Availability Controller
+ * Consultation Controller
  * 
- * Handles user onboarding consultation flow and weekly availability management.
+ * Handles user onboarding consultation flow and question management.
  * All routes require JWT authentication - userId extracted from token.
+ * 
+ * Note: Availability routes moved to AvailabilityController (separate resource).
  * 
  * Design decisions:
  * - RESTful conventions: GET/POST/PATCH/DELETE with proper status codes
@@ -70,7 +69,7 @@ export class ConsultationController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createConsultation(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateConsultationDto,
   ): Promise<ConsultationResponseDto> {
     return this.consultationService.createSession(userId, dto);
@@ -91,7 +90,7 @@ export class ConsultationController {
    */
   @Get(':id')
   async getConsultation(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
   ): Promise<ConsultationResponseDto> {
     return this.consultationService.getSession(sessionId, userId);
@@ -113,7 +112,7 @@ export class ConsultationController {
    */
   @Get()
   async getCurrentConsultation(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
   ): Promise<ConsultationResponseDto | null> {
     return this.consultationService.getCurrentSession(userId);
   }
@@ -136,7 +135,7 @@ export class ConsultationController {
    */
   @Patch(':id')
   async updateConsultation(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
     @Body() dto: UpdateConsultationDto,
   ): Promise<ConsultationResponseDto> {
@@ -159,7 +158,7 @@ export class ConsultationController {
    */
   @Post(':id/submit-answer')
   async submitSingleAnswer(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
     @Body() answer: ConsultationAnswerDto,
   ): Promise<ConsultationResponseDto> {
@@ -187,7 +186,7 @@ export class ConsultationController {
    */
   @Post(':id/complete')
   async completeConsultation(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
   ): Promise<ConsultationResponseDto> {
     return this.consultationService.completeSession(sessionId, userId);
@@ -196,7 +195,7 @@ export class ConsultationController {
   // ==================== CONSULTATION QUESTIONS (STATIC) ====================
 
   /**
-   * GET /consultation/questions
+   * GET /consultation/questions/all
    * 
    * Get all active consultation questions.
    * Use case: Mobile fetches question templates to render onboarding UI.
@@ -212,70 +211,5 @@ export class ConsultationController {
   @Get('questions/all')
   async getQuestions() {
     return this.consultationService.getActiveQuestions();
-  }
-
-  // ==================== AVAILABILITY ENDPOINTS ====================
-
-  /**
-   * POST /consultation/availability
-   * 
-   * Create or replace all availability windows.
-   * Use case: User sets/updates weekly workout schedule.
-   * 
-   * Request body: { windows: AvailabilityWindowDto[] }
-   * - Empty array = no regular availability (on-demand only)
-   * - Replaces ALL existing windows atomically (delete + insert in transaction)
-   * 
-   * Validation (in service):
-   * - No overlapping windows on same day
-   * - startMin < endMin for each window
-   * 
-   * Returns: Array of created windows with database IDs
-   */
-  @Post('availability')
-  @HttpCode(HttpStatus.CREATED)
-  async upsertAvailability(
-    @CurrentUser('userId') userId: string,
-    @Body() dto: UpsertAvailabilityDto,
-  ): Promise<AvailabilityWindowResponseDto[]> {
-    return this.consultationService.upsertAvailability(userId, dto);
-  }
-
-  /**
-   * GET /consultation/availability
-   * 
-   * Get user's current availability windows.
-   * Use case: Display weekly schedule, or check if availability is set.
-   * 
-   * Returns: Array of windows ordered by dayOfWeek ASC, startMin ASC
-   * Empty array if no availability set.
-   */
-  @Get('availability')
-  async getAvailability(
-    @CurrentUser('userId') userId: string,
-  ): Promise<AvailabilityWindowResponseDto[]> {
-    return this.consultationService.getAvailability(userId);
-  }
-
-  /**
-   * DELETE /consultation/availability/:id
-   * 
-   * Delete single availability window.
-   * Use case: User wants to remove one time block without re-sending full schedule.
-   * 
-   * Alternative to POST (which replaces all):
-   * - More granular for small edits
-   * - Better UX for "remove this Tuesday slot"
-   * 
-   * Security: Service verifies window belongs to user
-   * Returns: 204 No Content on success
-   */
-  @Delete('availability/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteAvailabilityWindow(
-    @CurrentUser('userId') userId: string,
-    @Param('id', ParseUUIDPipe) windowId: string,
-  ): Promise<void> {
-    return this.consultationService.deleteAvailabilityWindow(windowId, userId);
   }
 }
