@@ -20,3 +20,18 @@ import { IsDateString, IsOptional, IsBoolean, IsUUID } from 'class-validator'
  * - Service validates weekStart is Monday (or configurable week start day)
  * - Service validates planId belongs to user (if provided)
  */
+export class ScheduleWeekDto {
+    /**
+     * Start data of the week to schedule (ISO format: YYY-MM-DD).
+     * Should be Monday (or user's configured week start day).
+     * 
+     * Examples:
+     * - "2025-01-13" (Monday)
+     * - "2025-01-20" (next Monday)
+     * Srvice converts to user's timezone using Preference.timezone.
+     */
+    @IsDateString()
+    weekStart: string
+
+    
+}
