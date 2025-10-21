@@ -66,4 +66,52 @@ export class SchedulingService {
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
+
+/**
+   * Generate weekly workout schedule.
+   * 
+   * Flow:
+   * 1. Validate inputs (week start date, plan ownership)
+   * 2. Acquire distributed lock (prevent concurrent generation)
+   * 3. Fetch user's active plan, workout days, availability
+   * 4. Call planner algorithm to compute optimal schedule
+   * 5. If regenerate=true, delete existing scheduled workouts for this week
+   * 6. Persist new ScheduledWorkout records
+   * 7. Release lock
+   * 8. Return full schedule with nested details
+   * 
+   * Idempotency:
+   * - Same week + same plan = same result (if regenerate=true)
+   * - If regenerate=false, returns existing schedule without recomputation
+   * 
+   * Concurrency:
+   * - Uses Redis lock: lock:schedule:{userId}:{weekKey}
+   * - Only one generation per user per week at a time
+   * - Prevents duplicate ScheduledWorkout creation
+   * 
+   * @param userId - Authenticated user ID from JWT
+   * @param dto - Week to schedule and options
+   * @returns Full schedule with scheduled and unscheduled workouts
+   */
+
+async generateWeekSchedule(
+    userId: string
+    dto: ScheduleWeekDto,
+): Promise<ScheduleWeekResponseDto> {
+    //Parse and validate week start date
+    const weekStart = this.parseAndValidateWeekStart(dto.weekStart)
+    const weekKey = this.generateWeekKey(weekStart)
+this.logger.log(
+    `Generate schedule for user ${userId}, week ${weekKey}, regenerate=${dto.regenerate}`,
+)}
+// Acquire distributed lock to prevent concurrent generation
+    const lockKey = `lock:schedule:${userId}:${weekKey}`;
+    const lockValue = `${Date.now()}`; // Unique value for this lock holder
+    const lockAcquired = await this.acquireLock(lockKey, lockValue);
+
+    if (!lockAcquired) {
+      throw new BadRequestException(
+        'Schedule generation already in progress for this week. Please try again in a moment.',
+      );
+    }
 }
