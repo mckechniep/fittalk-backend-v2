@@ -15,7 +15,6 @@ import {
 import { UpdateConsultationDto } from './dtos/update-consultation.dto';
 import {
   ConsultationResponseDto,
-  ConsultationAnswerResponseDto,
 } from './dtos/consultation-response.dto';
 import {
   UpsertAvailabilityDto,
