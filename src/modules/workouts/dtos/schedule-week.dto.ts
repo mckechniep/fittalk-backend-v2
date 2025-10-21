@@ -22,7 +22,7 @@ import { IsDateString, IsOptional, IsBoolean, IsUUID } from 'class-validator'
  */
 export class ScheduleWeekDto {
     /**
-     * Start date of the week to schedule (ISO format: YYY-MM-DD).
+     * Start date of the week to schedule (ISO format: YYYY-MM-DD).
      * Should be Monday (or user's configured week start day).
      * 
      * Examples:
@@ -41,7 +41,7 @@ export class ScheduleWeekDto {
  */
 @IsOptional()
 @IsUUID()
-planned?: string 
+planId?: string 
 
 /**
  * Force regeneration even if week already scheduled.
@@ -62,7 +62,7 @@ regenerate?: boolean
 }
 
 /**
- * Query DTO for fetching scheduleed workouts.
+ * Query DTO for fetching scheduled workouts.
  * Used with GET endpoint.
  */
 export class GetScheduleQueryDto {
@@ -83,5 +83,5 @@ weekStart?: string
 planId?: string
 
 @IsOptional()
-status?: 'scheduled' | 'in_progress' | 'completed' | 'skipped' | 'canceled'
+status?: 'scheduled' | 'in_progress' | 'completed' | 'skipped' | 'cancelled'
 }
