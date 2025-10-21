@@ -22,16 +22,66 @@ import { IsDateString, IsOptional, IsBoolean, IsUUID } from 'class-validator'
  */
 export class ScheduleWeekDto {
     /**
-     * Start data of the week to schedule (ISO format: YYY-MM-DD).
+     * Start date of the week to schedule (ISO format: YYY-MM-DD).
      * Should be Monday (or user's configured week start day).
      * 
      * Examples:
      * - "2025-01-13" (Monday)
      * - "2025-01-20" (next Monday)
-     * Srvice converts to user's timezone using Preference.timezone.
+     * Service converts to user's timezone using Preference.timezone.
      */
     @IsDateString()
     weekStart: string
 
-    
+/**
+ * Specific plan to schedule.
+ * If not provided, uses user's active plan (status='active').
+ * 
+ * Use case: User has multiple plans (e.g., bulk phase, cut phase)
+ */
+@IsOptional()
+@IsUUID()
+planned?: string 
+
+/**
+ * Force regeneration even if week already scheduled.
+ * Default: false (skip if week already has scheduled workouts)
+ * 
+ * Use cases:
+ * - User updated availability -> regenerate to fit new schedule
+ * - User modified plan -> regenerate with new workouts
+ * - Fix incorrect schedule -> force regenerate
+ * 
+ * Behavior:
+ * - true: Delete existing scheduled workouts for this week, generate fresh
+ * - false: Return existing schedule if present, generate only if missing
+ */
+@IsOptional()
+@IsBoolean()
+regenerate?: boolean
+}
+
+/**
+ * Query DTO for fetching scheduleed workouts.
+ * Used with GET endpoint.
+ */
+export class GetScheduleQueryDto {
+/**
+ * Start date of the week to fetch (YYYY-MM-DD).
+ * Defaults to current week if not provided.
+ */
+@IsOptional()
+@IsDateString()
+weekStart?: string
+
+/**
+ * Filter by plan ID.
+ * Returns all plans if not provided.
+ */
+@IsOptional()
+@IsUUID()
+planId?: string
+
+@IsOptional()
+status?: 'scheduled' | 'in_progress' | 'completed' | 'skipped' | 'canceled'
 }
