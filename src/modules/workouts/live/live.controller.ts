@@ -127,5 +127,47 @@ export class LiveController {
     return this.liveService.endSession(userId, sessionId);
   }
 
-  
+  /**
+   * DELETE /workouts/live/sessions/:id
+   *
+   * Cancel a scheduled (not-yet-started) session (host only).
+   * Soft cancel to preserve audit history.
+   */
+  @Delete('sessions/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async cancelScheduled(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
+  ): Promise<void> {
+    await this.liveService.cancelScheduled(userId, sessionId);
+  }
+  /**
+   * POST /workouts/live/sessions/:id/events
+   *
+   * Emit a live event through HTTP (fallback/audit trail).
+   * Service persists (when applicable) and fans out via LiveGateway.
+   * Headers (optional): Idempotency-Key
+   */
+  @Post('sessions/:id/events')
+  async emitEvent(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Body() dto: LiveEventDto,
+    @Headers('idempotency-key') idemKey?: string,
+  ): Promise<{ accepted: boolean }> {
+    return this.liveService.emitEvent(userId, sessionId, dto, { idemKey });
+  }
+
+  /**
+   * GET /workouts/live/sessions/:id/state
+   *
+   * Fetch a lightweight presence/state snapshot for quick UI rehydration.
+   */
+  @Get('sessions/:id/state')
+  async getState(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+  ): Promise<any> {
+    return this.sessionStateService.getSnapshot(sessionId);
+  }
 }
+
