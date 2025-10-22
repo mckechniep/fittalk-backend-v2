@@ -38,6 +38,34 @@ updatedAt: Date
 }
 
 /**
+ * Embedded question details within answer response.
+ * Subset of ConsultationQuestion model - only client-needed fields.
+ */
+export class QuestionDetailsDto {
+  @Expose()
+  id: string;
+
+  @Expose()
+  code: string;
+
+  @Expose()
+  prompt: string;
+
+  @Expose()
+  helpText: string | null;
+
+  @Expose()
+  type: string;
+
+  /**
+   * Options for enum/scale/multi questions.
+   * Example: ["fat_loss", "muscle_gain", "performance"]
+   */
+  @Expose()
+  optionsJson: unknown | null;
+}
+
+/**
  * Individual answer in consultation response.
  * Includes full question details to avoid client needing separate question lookup.
  */
@@ -69,32 +97,4 @@ questionId: string
 
   @Expose()
   updatedAt: Date;
-}
-
-/**
- * Embedded question details within answer response.
- * Subset of ConsultationQuestion model - only client-needed fields.
- */
-export class QuestionDetailsDto {
-  @Expose()
-  id: string;
-
-  @Expose()
-  code: string;
-
-  @Expose()
-  prompt: string;
-
-  @Expose()
-  helpText: string | null;
-
-  @Expose()
-  type: string;
-
-  /**
-   * Options for enum/scale/multi questions.
-   * Example: ["fat_loss", "muscle_gain", "performance"]
-   */
-  @Expose()
-  optionsJson: unknown | null;
 }
