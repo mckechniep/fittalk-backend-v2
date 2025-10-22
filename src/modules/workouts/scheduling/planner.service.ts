@@ -329,8 +329,10 @@ export class PlannerService {
    * - Work: 3 * (10 * 5s) = 150s = 2.5 min
    * - Rest: 3 * 90s = 270s = 4.5 min
    * - Total: 7 min per exercise
+   * 
+   * Public: SchedulingService needs this for existing workout duration estimation
    */
-  private estimateWorkoutDuration(day: WorkoutDayInput): number {
+  estimateWorkoutDuration(day: WorkoutDayInput): number {
     if (!day.items || day.items.length === 0) {
       // No items defined, use default by focus type
       const defaultDuration = this.DEFAULT_DURATIONS[day.focus] || 60;
