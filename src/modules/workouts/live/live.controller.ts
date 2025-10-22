@@ -1,29 +1,34 @@
-// live/live.controller.ts
+// src/modules/workouts/live/live.controller.ts
+
 import {
   Body,
   Controller,
-  Get,
-  Post,
-  Patch,
   Delete,
-  Param,
-  Query,
+  Get,
+  Headers,
   HttpCode,
   HttpStatus,
-  UseGuards,
+  Param,
   ParseUUIDPipe,
-  Headers,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+
 import { LiveService } from './live.service';
 import { SessionStateService } from './session-state.service';
 
-// DTOs (place these in ./dto/* to match your structure)
-import { CreateLiveSessionDto } from './dto/create-live-session.dto';
-import { JoinSessionDto } from './dto/join-session.dto';
-import { LiveEventDto } from './dto/live-event.dto';
-import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+import {
+  CreateLiveSessionDto,
+  JoinSessionDto,
+  LiveEventDto,
+} from './dto';
+import { PaginationQueryDto } from '../../../common/dto/ppagination-query.dto'; // <- keep using your shared pagination DTO; fix path if needed
+
+type SessionStatus = 'active' | 'scheduled' | 'ended';
 
 @UseGuards(JwtAuthGuard)
 @Controller('workouts/live')
@@ -35,12 +40,8 @@ export class LiveController {
 
   /**
    * POST /workouts/live/sessions
-   *
-   * Create a live workout session for the current user (host).
-   * Idempotent via optional Idempotency-Key header to avoid duplicate creations.
-   *
-   * Body: CreateLiveSessionDto
-   * Headers (optional): Idempotency-Key
+   * Create a live workout session (host = current user).
+   * Optional Idempotency-Key header to guard against duplicate creations.
    */
   @Post('sessions')
   async createSession(
@@ -53,15 +54,13 @@ export class LiveController {
 
   /**
    * GET /workouts/live/sessions/:id
-   *
-   * Return session metadata plus a lightweight presence/state snapshot.
-   * Combines DB metadata with transient state (Redis/in-memory).
+   * Return session metadata + a lightweight presence/state snapshot.
    */
   @Get('sessions/:id')
   async getSession(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
-  ): Promise<{ meta: any; state: any }> {
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+  ): Promise<{ meta: unknown; state: unknown }> {
     const [meta, state] = await Promise.all([
       this.liveService.getSessionOrThrow(userId, sessionId),
       this.sessionStateService.getSnapshot(sessionId),
@@ -71,103 +70,93 @@ export class LiveController {
 
   /**
    * GET /workouts/live/sessions
-   *
-   * List sessions for the current user.
-   * Query: PaginationQueryDto + optional status=active|scheduled|ended
+   * List sessions for the current user (active first, then recent).
+   * Accepts shared pagination + optional status filter.
    */
   @Get('sessions')
   async listMySessions(
     @CurrentUser('id') userId: string,
     @Query() pagination: PaginationQueryDto,
-    @Query('status') status?: 'active' | 'scheduled' | 'ended',
-  ): Promise<{ items: any[]; nextCursor?: string }> {
+    @Query('status') status?: SessionStatus,
+  ): Promise<{ items: Array<{ id: string; title: string; status: SessionStatus; scheduledAt?: string | null; createdAt: string }>; nextCursor?: string }> {
     return this.liveService.listUserSessions(userId, { status, ...pagination });
   }
 
   /**
    * POST /workouts/live/sessions/:id/join
-   *
-   * Join a live session (idempotent; safe to retry with Idempotency-Key).
-   * Body: JoinSessionDto
-   * Headers (optional): Idempotency-Key
+   * Join a live session (idempotent with Idempotency-Key).
    */
   @Post('sessions/:id/join')
   async joinSession(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
     @Body() dto: JoinSessionDto,
     @Headers('idempotency-key') idemKey?: string,
-  ): Promise<{ joined: boolean }> {
+  ): Promise<{ joined: true }> {
     return this.liveService.joinSession(userId, sessionId, dto, { idemKey });
   }
+
   /**
    * POST /workouts/live/sessions/:id/leave
-   *
-   * Leave a live session.
+   * Leave a live session. No content on success.
    */
   @Post('sessions/:id/leave')
   @HttpCode(HttpStatus.NO_CONTENT)
   async leaveSession(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
   ): Promise<void> {
     await this.liveService.leaveSession(userId, sessionId);
   }
 
   /**
    * PATCH /workouts/live/sessions/:id/end
-   *
    * End a live session (host only).
    */
   @Patch('sessions/:id/end')
   async endSession(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
-  ): Promise<{ ended: boolean }> {
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+  ): Promise<{ ended: true }> {
     return this.liveService.endSession(userId, sessionId);
   }
 
   /**
    * DELETE /workouts/live/sessions/:id
-   *
-   * Cancel a scheduled (not-yet-started) session (host only).
-   * Soft cancel to preserve audit history.
+   * Cancel a scheduled session (host only). Soft cancel; no body returned.
    */
   @Delete('sessions/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async cancelScheduled(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
   ): Promise<void> {
     await this.liveService.cancelScheduled(userId, sessionId);
   }
+
   /**
    * POST /workouts/live/sessions/:id/events
-   *
-   * Emit a live event through HTTP (fallback/audit trail).
-   * Service persists (when applicable) and fans out via LiveGateway.
-   * Headers (optional): Idempotency-Key
+   * HTTP fallback/audit path to emit a live event; service persists and
+   * your gateway can fan-out. Supports Idempotency-Key for safe retries.
    */
   @Post('sessions/:id/events')
   async emitEvent(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
     @Body() dto: LiveEventDto,
     @Headers('idempotency-key') idemKey?: string,
-  ): Promise<{ accepted: boolean }> {
+  ): Promise<{ accepted: true }> {
     return this.liveService.emitEvent(userId, sessionId, dto, { idemKey });
   }
 
   /**
    * GET /workouts/live/sessions/:id/state
-   *
-   * Fetch a lightweight presence/state snapshot for quick UI rehydration.
+   * Lightweight presence/state snapshot for fast UI rehydration.
    */
   @Get('sessions/:id/state')
   async getState(
-    @Param('id', ParseUUIDPipe) sessionId: string,
-  ): Promise<any> {
+    @Param('id', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+  ): Promise<unknown> {
     return this.sessionStateService.getSnapshot(sessionId);
   }
 }
-
