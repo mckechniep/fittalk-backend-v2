@@ -14,7 +14,7 @@ import {
   ParseUUIDPipe,
   Headers,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { LiveService } from './live.service';
 import { SessionStateService } from './session-state.service';
@@ -33,8 +33,7 @@ export class LiveController {
     private readonly sessionStateService: SessionStateService,
   ) {}
 
-
-/**
+  /**
    * POST /workouts/live/sessions
    *
    * Create a live workout session for the current user (host).
@@ -70,7 +69,7 @@ export class LiveController {
     return { meta, state };
   }
 
-/**
+  /**
    * GET /workouts/live/sessions
    *
    * List sessions for the current user.
@@ -84,4 +83,49 @@ export class LiveController {
   ): Promise<{ items: any[]; nextCursor?: string }> {
     return this.liveService.listUserSessions(userId, { status, ...pagination });
   }
+
+  /**
+   * POST /workouts/live/sessions/:id/join
+   *
+   * Join a live session (idempotent; safe to retry with Idempotency-Key).
+   * Body: JoinSessionDto
+   * Headers (optional): Idempotency-Key
+   */
+  @Post('sessions/:id/join')
+  async joinSession(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Body() dto: JoinSessionDto,
+    @Headers('idempotency-key') idemKey?: string,
+  ): Promise<{ joined: boolean }> {
+    return this.liveService.joinSession(userId, sessionId, dto, { idemKey });
+  }
+  /**
+   * POST /workouts/live/sessions/:id/leave
+   *
+   * Leave a live session.
+   */
+  @Post('sessions/:id/leave')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async leaveSession(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
+  ): Promise<void> {
+    await this.liveService.leaveSession(userId, sessionId);
+  }
+
+  /**
+   * PATCH /workouts/live/sessions/:id/end
+   *
+   * End a live session (host only).
+   */
+  @Patch('sessions/:id/end')
+  async endSession(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
+  ): Promise<{ ended: boolean }> {
+    return this.liveService.endSession(userId, sessionId);
+  }
+
+  
 }
