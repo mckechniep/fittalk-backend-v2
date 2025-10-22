@@ -38,3 +38,17 @@ curl -s -X POST $BASE/api/v1/auth/devices \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"platform":"android","deviceId":"test-123","pushToken":"fcm-token"}' | jq
+
+echo -e "\n6. Generate Weekly Schedule"
+curl -s -X POST $BASE/api/v1/workouts/schedule/week \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"weekStart": "2025-01-20", "regenerate": true}' | jq
+
+echo -e "\n7. Get Weekly Schedule"
+curl -s -X GET "$BASE/api/v1/workouts/schedule/week?weekStart=2025-01-20" \
+  -H "Authorization: Bearer $JWT_TOKEN" | jq
+
+echo -e "\n8. Get Upcoming Workout"
+curl -s -X GET "$BASE/api/v1/workouts/schedule/upcoming" \
+  -H "Authorization: Bearer $JWT_TOKEN" | jq
