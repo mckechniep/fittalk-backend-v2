@@ -25,7 +25,7 @@ import {
   CreateLiveSessionDto,
   JoinSessionDto,
   LiveEventDto,
-} from './dto';
+} from './dtos';
 import { PaginationQueryDto } from '../../../common/dto/ppagination-query.dto'; // <- keep using your shared pagination DTO; fix path if needed
 
 type SessionStatus = 'active' | 'scheduled' | 'ended';
