@@ -40,7 +40,10 @@ export class AuthService {
    * For CREATE: firstname and lastname are required
    * For UPDATE: only provided fields are updated
    */
-  async createOrUpdateProfile(userId: string, dto: CreateProfileDto | UpdateProfileDto) {
+  async createOrUpdateProfile(
+    userId: string,
+    dto: CreateProfileDto | UpdateProfileDto,
+  ) {
     // Check if we're doing a create or update by checking if profile exists
     const existingProfile = await this.prisma.profile.findUnique({
       where: { userId },
@@ -59,8 +62,12 @@ export class AuthService {
           ...(dto.sex !== undefined && { sex: dto.sex }),
           ...(dto.heightCm !== undefined && { heightCm: dto.heightCm }),
           ...(dto.weightKg !== undefined && { weightKg: dto.weightKg }),
-          ...(dto.experienceLevel !== undefined && { experienceLevel: dto.experienceLevel }),
-          ...(dto.healthNotes !== undefined && { healthNotes: dto.healthNotes }),
+          ...(dto.experienceLevel !== undefined && {
+            experienceLevel: dto.experienceLevel,
+          }),
+          ...(dto.healthNotes !== undefined && {
+            healthNotes: dto.healthNotes,
+          }),
           ...(dto.goalType !== undefined && { goalType: dto.goalType }),
           ...(dto.unitSystem !== undefined && { unitSystem: dto.unitSystem }),
         },

@@ -22,9 +22,9 @@ import { ScheduledWorkoutStatus } from '@prisma/client';
 
 /**
  * Scheduling Service
- * 
+ *
  * Orchestrates workout schedule generation with database persistence.
- * 
+ *
  * Responsibilities:
  * - Fetch user's workout plan and availability
  * - Call PlannerService to compute optimal schedule
@@ -32,14 +32,14 @@ import { ScheduledWorkoutStatus } from '@prisma/client';
  * - Ensure idempotency (safe to regenerate same week)
  * - Use distributed locks to prevent concurrent generation
  * - Validate user permissions and data ownership
- * 
+ *
  * Design principles:
  * - Orchestration only: delegates algorithm to PlannerService
  * - Transactional: All DB writes succeed or all fail
  * - Idempotent: Can safely regenerate same week multiple times
  * - Distributed-safe: Redis locks prevent race conditions
  * - Rich responses: Includes both success and failure information
- * 
+ *
  * Dependencies:
  * - PrismaService: Database access
  * - PlannerService: Pure scheduling algorithm
@@ -70,7 +70,7 @@ export class SchedulingService {
 
   /**
    * Generate weekly workout schedule.
-   * 
+   *
    * Flow:
    * 1. Validate inputs (week start date, plan ownership)
    * 2. Acquire distributed lock (prevent concurrent generation)
@@ -80,16 +80,16 @@ export class SchedulingService {
    * 6. Persist new ScheduledWorkout records
    * 7. Release lock
    * 8. Return full schedule with nested details
-   * 
+   *
    * Idempotency:
    * - Same week + same plan = same result (if regenerate=true)
    * - If regenerate=false, returns existing schedule without recomputation
-   * 
+   *
    * Concurrency:
    * - Uses Redis lock: lock:schedule:{userId}:{weekKey}
    * - Only one generation per user per week at a time
    * - Prevents duplicate ScheduledWorkout creation
-   * 
+   *
    * @param userId - Authenticated user ID from JWT
    * @param dto - Week to schedule and options
    * @returns Full schedule with scheduled and unscheduled workouts
@@ -120,7 +120,10 @@ export class SchedulingService {
     try {
       // Check if week already scheduled
       if (!dto.regenerate) {
-        const existingSchedule = await this.getExistingSchedule(userId, weekStart);
+        const existingSchedule = await this.getExistingSchedule(
+          userId,
+          weekStart,
+        );
         if (existingSchedule.length > 0) {
           this.logger.log(
             `Week ${weekKey} already scheduled (${existingSchedule.length} workouts), returning existing`,
@@ -153,7 +156,10 @@ export class SchedulingService {
       const availabilityWindows = await this.getUserAvailability(userId);
 
       // Fetch existing scheduled workouts in this week (for overlap detection)
-      const existingScheduled = await this.getExistingSchedule(userId, weekStart);
+      const existingScheduled = await this.getExistingSchedule(
+        userId,
+        weekStart,
+      );
 
       // Call planner to compute optimal schedule
       const planResult = this.planner.scheduleWeek(
@@ -219,7 +225,7 @@ export class SchedulingService {
 
   /**
    * Get scheduled workouts for a specific week.
-   * 
+   *
    * @param userId - User ID from JWT
    * @param weekStart - Week start date (ISO string)
    * @param planId - Optional: filter by specific plan
@@ -275,7 +281,7 @@ export class SchedulingService {
 
   /**
    * Get next upcoming scheduled workout.
-   * 
+   *
    * @param userId - User ID from JWT
    * @returns Next scheduled workout or null if none exist
    */
@@ -319,9 +325,9 @@ export class SchedulingService {
 
   /**
    * Cancel a scheduled workout.
-   * 
+   *
    * Security: Verifies user owns the scheduled workout
-   * 
+   *
    * @param userId - User ID from JWT
    * @param scheduledWorkoutId - ID of workout to cancel
    */
@@ -358,12 +364,12 @@ export class SchedulingService {
 
   /**
    * Parse week start date string and validate it's valid.
-   * 
+   *
    * Validation:
    * - Must be valid ISO date string
    * - Service doesn't enforce Monday (flexible for different week starts)
    * - Normalizes to midnight in user's timezone
-   * 
+   *
    * @param weekStartStr - ISO date string (YYYY-MM-DD)
    * @returns Date object at midnight
    */
@@ -382,7 +388,7 @@ export class SchedulingService {
 
   /**
    * Get current week start (Monday of current week).
-   * 
+   *
    * @returns Date object for this Monday at midnight
    */
   private getCurrentWeekStart(): Date {
@@ -399,7 +405,7 @@ export class SchedulingService {
 
   /**
    * Generate week key for locking and logging (YYYY-WW format).
-   * 
+   *
    * @param weekStart - Week start date
    * @returns Week key string (e.g., "2025-03")
    */
@@ -411,19 +417,20 @@ export class SchedulingService {
 
   /**
    * Calculate ISO week number.
-   * 
+   *
    * @param date - Date to calculate week for
    * @returns Week number (1-53)
    */
   private getWeekNumber(date: Date): number {
     const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    const pastDaysOfYear =
+      (date.getTime() - firstDayOfYear.getTime()) / 86400000;
     return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   }
 
   /**
    * Get user's active workout plan or specific plan by ID.
-   * 
+   *
    * @param userId - User ID
    * @param planId - Optional: specific plan ID
    * @returns WorkoutPlan or null if not found
@@ -466,20 +473,17 @@ export class SchedulingService {
 
   /**
    * Get workout days that should be scheduled in this week.
-   * 
+   *
    * Logic:
    * - Calculate which week number in the plan this calendar week corresponds to
    * - Fetch all WorkoutDays for that week number
    * - Include nested items (exercises) for duration estimation
-   * 
+   *
    * @param planId - Workout plan ID
    * @param weekStart - Start of week to schedule
    * @returns Array of WorkoutDay with items
    */
-  private async getWorkoutDaysForWeek(
-    planId: string,
-    weekStart: Date,
-  ) {
+  private async getWorkoutDaysForWeek(planId: string, weekStart: Date) {
     // For MVP: Schedule all days in the plan for this week
     // Future: Calculate plan week number based on plan.createdAt
     // For now: Get days for week 1 of the plan
@@ -512,14 +516,18 @@ export class SchedulingService {
 
   /**
    * Get user's availability windows.
-   * 
+   *
    * @param userId - User ID
    * @returns Array of availability windows
    */
   private async getUserAvailability(userId: string) {
     const windows = await this.prisma.availabilityWindow.findMany({
       where: { userId },
-      orderBy: [{ priority: 'desc' }, { dayOfWeek: 'asc' }, { startMin: 'asc' }],
+      orderBy: [
+        { priority: 'desc' },
+        { dayOfWeek: 'asc' },
+        { startMin: 'asc' },
+      ],
     });
 
     return windows;
@@ -527,11 +535,11 @@ export class SchedulingService {
 
   /**
    * Get existing scheduled workouts for a week.
-   * 
+   *
    * Used for:
    * - Checking if week already scheduled
    * - Overlap detection when regenerating
-   * 
+   *
    * @param userId - User ID
    * @param weekStart - Start of week
    * @returns Array of scheduled workouts in this week
@@ -573,11 +581,11 @@ export class SchedulingService {
 
   /**
    * Persist scheduled workouts to database.
-   * 
+   *
    * Transaction:
    * - If regenerate=true: delete existing, then insert new
    * - If regenerate=false: only insert new (no deletes)
-   * 
+   *
    * @param userId - User ID
    * @param assignments - Scheduled assignments from planner
    * @param regenerate - Whether to delete existing first
@@ -656,7 +664,7 @@ export class SchedulingService {
 
   /**
    * Build ScheduleWeekResponseDto from persisted data.
-   * 
+   *
    * @param weekStart - Week start ISO string
    * @param scheduled - Persisted scheduled workouts
    * @param unscheduled - Days that couldn't be scheduled
@@ -687,11 +695,13 @@ export class SchedulingService {
 
   /**
    * Transform Prisma ScheduledWorkout to DTO.
-   * 
+   *
    * Uses class-transformer with @Expose() decorators.
    * Handles nested plan and day details.
    */
-  private transformToResponseDto(scheduledWorkout: any): ScheduledWorkoutResponseDto {
+  private transformToResponseDto(
+    scheduledWorkout: any,
+  ): ScheduledWorkoutResponseDto {
     return plainToInstance(
       ScheduledWorkoutResponseDto,
       {
@@ -740,11 +750,11 @@ export class SchedulingService {
 
   /**
    * Acquire distributed lock using Redis.
-   * 
+   *
    * Uses SET with NX and PX options (node-redis v5 syntax):
    * - NX: Only set if key doesn't exist
    * - PX: Set TTL in milliseconds
-   * 
+   *
    * @param key - Lock key
    * @param value - Unique value for this lock holder
    * @returns true if lock acquired, false if already held
@@ -764,10 +774,10 @@ export class SchedulingService {
 
   /**
    * Release distributed lock.
-   * 
+   *
    * Only releases if this process owns the lock (value matches).
    * Prevents accidentally releasing another process's lock.
-   * 
+   *
    * @param key - Lock key
    * @param value - Lock value set by this process
    */

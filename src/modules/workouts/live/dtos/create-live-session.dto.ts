@@ -1,4 +1,12 @@
-import { IsBoolean, IsDateString, IsOptional, IsString, IsUUID, Length, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 /**
  * Create a live workout session.

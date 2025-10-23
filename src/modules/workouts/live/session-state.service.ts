@@ -1,572 +1,313 @@
-// live-sessions/session-state.service.ts
-import { Injectable, Logger, Inject } from '@nestjs/common';
-import type { RedisClientType } from 'redis';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { REDIS_CLIENT } from '../../../common/redis/redis.module';
+import type { RedisClientType } from 'redis';
+import { SessionStateSnapshotDto } from './dtos/session-state-snapshot.dto';
+
+/**
+ * Session states for the finite state machine
+ */
+export type SessionState = 'idle' | 'exercising' | 'resting' | 'paused' | 'completed';
+
+/**
+ * Valid state transitions for the FSM
+ */
+const STATE_TRANSITIONS: Record<SessionState, SessionState[]> = {
+  idle: ['exercising', 'completed'],
+  exercising: ['resting', 'paused', 'completed'],
+  resting: ['exercising', 'paused', 'completed'],
+  paused: ['exercising', 'resting', 'completed'],
+  completed: [], // Terminal state - no transitions allowed
+};
 
 /**
  * Session State Service
- * 
- * Manages ephemeral, real-time session state in Redis.
- * 
- * Responsibilities:
- * - Track active users in live workout sessions (presence)
- * - Maintain lightweight session state for real-time UI updates
- * - Handle user join/leave/heartbeat events
- * - Provide fast state snapshots without database queries
- * - Automatic cleanup of stale presence data
- * - Support for user metadata (display name, role, status)
- * 
- * Design principles:
- * - Ephemeral: Data lives only in Redis, not persisted to DB
- * - Fast: Sub-millisecond read/write operations
- * - TTL-based: Automatic cleanup via Redis expiration
- * - Eventually consistent: Real-time UX, not source of truth
- * - Graceful degradation: Falls back safely if Redis unavailable
- * - Memory efficient: Uses Redis hashes and sorted sets
- * 
- * Data structures:
- * - Hash: session:{sessionId}:users -> { userId: metadata }
- * - Sorted Set: session:{sessionId}:presence -> userId scored by timestamp
- * - String: session:{sessionId}:metadata -> JSON session info
- * 
- * Use cases:
- * - Show "3 people working out" in UI
- * - Display list of active participants
- * - Detect when users disconnect/timeout
- * - Sync real-time workout progress across devices
- * - Enable collaborative/social workout features
- * 
- * Dependencies:
- * - Redis: Primary data store for session state
- * - Logger: Structured logging
+ *
+ * Manages the finite state machine for live workout sessions.
+ * Handles state transitions, validation, and persistence in Redis.
+ *
+ * Design:
+ * - States: idle → exercising ↔ resting ↔ paused → completed
+ * - Redis as source of truth for real-time state
+ * - Fast reads/writes for WebSocket synchronization
+ * - TTL-based cleanup (4 hours after session ends)
  */
 @Injectable()
 export class SessionStateService {
   private readonly logger = new Logger(SessionStateService.name);
-
-  /**
-   * TTL for session presence data (5 minutes).
-   * After no activity, user removed from presence.
-   */
-  private readonly PRESENCE_TTL_SEC = 5 * 60;
-
-  /**
-   * TTL for session metadata (1 hour).
-   * Session state expires after no activity.
-   */
-  private readonly SESSION_TTL_SEC = 60 * 60;
-
-  /**
-   * Heartbeat window for active presence (90 seconds).
-   * Users without heartbeat in this window are considered inactive.
-   */
-  private readonly HEARTBEAT_WINDOW_SEC = 90;
+  private readonly STATE_KEY_PREFIX = 'session:state:';
+  private readonly STATE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: RedisClientType,
   ) {}
 
   /**
-   * User joins a session.
-   * 
-   * Flow:
-   * 1. Add user to session presence set with current timestamp
-   * 2. Store user metadata in session hash
-   * 3. Update session metadata (last activity time)
-   * 4. Set TTL on all session keys
-   * 
-   * Idempotent: Safe to call multiple times for same user.
-   * 
-   * @param sessionId - Session ID (UUID)
-   * @param userId - User ID joining the session
-   * @param metadata - Optional user metadata (name, role, avatar)
+   * Initialize a new session state in Redis
    */
-  async join(
+  async initializeState(sessionId: string, initialExerciseId?: string): Promise<SessionStateSnapshotDto> {
+    const snapshot: SessionStateSnapshotDto = {
+      sessionId,
+      status: 'idle',
+      currentExerciseId: initialExerciseId || null,
+      currentExerciseIndex: initialExerciseId ? 0 : undefined,
+      currentSetNumber: 0,
+      totalSetsCompleted: 0,
+      restTimerStartedAt: null,
+      restDurationMs: null,
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+
+    await this.persistState(sessionId, snapshot);
+    this.logger.log(`Initialized state for session ${sessionId}`);
+
+    return snapshot;
+  }
+
+  /**
+   * Get current state snapshot from Redis
+   */
+  async getSnapshot(sessionId: string): Promise<SessionStateSnapshotDto | null> {
+    const key = this.getRedisKey(sessionId);
+    const data = await this.redis.get(key);
+
+    if (!data) {
+      this.logger.warn(`No state found for session ${sessionId}`);
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(data);
+      // Convert lastActivityAt back to Date
+      parsed.lastActivityAt = new Date(parsed.lastActivityAt);
+      return parsed as SessionStateSnapshotDto;
+    } catch (error) {
+      this.logger.error(`Failed to parse state for session ${sessionId}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Transition to a new state with validation
+   */
+  async transitionTo(
     sessionId: string,
-    userId: string,
-    metadata?: {
-      name?: string;
-      role?: string;
-      avatar?: string;
-      status?: string;
-    },
-  ): Promise<void> {
-    try {
-      const now = Date.now();
-      const presenceKey = this.getPresenceKey(sessionId);
-      const usersKey = this.getUsersKey(sessionId);
-      const metadataKey = this.getMetadataKey(sessionId);
+    newState: SessionState,
+    updates?: Partial<SessionStateSnapshotDto>,
+  ): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
 
-      // Use pipeline for atomic multi-key operations
-      const pipeline = this.redis.multi();
-
-      // Add user to presence sorted set (score = timestamp)
-      pipeline.zAdd(presenceKey, { score: now, value: userId });
-
-      // Store user metadata
-      const userMeta = JSON.stringify({
-        userId,
-        name: metadata?.name || 'Anonymous',
-        role: metadata?.role || 'participant',
-        avatar: metadata?.avatar,
-        status: metadata?.status || 'active',
-        joinedAt: now,
-        lastSeenAt: now,
-      });
-      pipeline.hSet(usersKey, userId, userMeta);
-
-      // Update session metadata
-      pipeline.set(
-        metadataKey,
-        JSON.stringify({ lastActivityAt: now }),
-        { EX: this.SESSION_TTL_SEC },
-      );
-
-      // Set TTLs on presence and users keys
-      pipeline.expire(presenceKey, this.SESSION_TTL_SEC);
-      pipeline.expire(usersKey, this.SESSION_TTL_SEC);
-
-      await pipeline.exec();
-
-      this.logger.debug(`User ${userId} joined session ${sessionId}`);
-    } catch (error) {
-      this.logger.error(
-        `Failed to add user ${userId} to session ${sessionId}`,
-        error,
-      );
-      // Non-critical, don't throw
+    if (!currentSnapshot) {
+      throw new BadRequestException(`Session ${sessionId} not found or expired`);
     }
+
+    // Validate state transition
+    const allowedTransitions = STATE_TRANSITIONS[currentSnapshot.status];
+    if (!allowedTransitions.includes(newState)) {
+      throw new BadRequestException(
+        `Invalid state transition: ${currentSnapshot.status} → ${newState}`,
+      );
+    }
+
+    // Apply transition
+    const updatedSnapshot: SessionStateSnapshotDto = {
+      ...currentSnapshot,
+      ...updates,
+      status: newState,
+      lastActivityAt: new Date(),
+    };
+
+    await this.persistState(sessionId, updatedSnapshot);
+    this.logger.log(`Session ${sessionId} transitioned: ${currentSnapshot.status} → ${newState}`);
+
+    return updatedSnapshot;
   }
 
   /**
-   * User leaves a session.
-   * 
-   * Flow:
-   * 1. Remove user from presence set
-   * 2. Remove user metadata from hash
-   * 3. If session is empty, clean up all keys
-   * 
-   * Idempotent: Safe to call even if user not in session.
-   * 
-   * @param sessionId - Session ID
-   * @param userId - User ID leaving
+   * Start exercising
    */
-  async leave(sessionId: string, userId: string): Promise<void> {
-    try {
-      const presenceKey = this.getPresenceKey(sessionId);
-      const usersKey = this.getUsersKey(sessionId);
-
-      const pipeline = this.redis.multi();
-
-      // Remove from presence
-      pipeline.zRem(presenceKey, userId);
-
-      // Remove user metadata
-      pipeline.hDel(usersKey, userId);
-
-      await pipeline.exec();
-
-      // Check if session is now empty, clean up if so
-      const remainingUsers = await this.redis.zCard(presenceKey);
-      if (remainingUsers === 0) {
-        await this.cleanupSession(sessionId);
-      }
-
-      this.logger.debug(`User ${userId} left session ${sessionId}`);
-    } catch (error) {
-      this.logger.error(
-        `Failed to remove user ${userId} from session ${sessionId}`,
-        error,
-      );
-      // Non-critical
-    }
-  }
-
-  /**
-   * Update user's last activity timestamp (heartbeat).
-   * 
-   * Clients should call this every 30-60 seconds to maintain presence.
-   * If no heartbeat received within HEARTBEAT_WINDOW_SEC, user is stale.
-   * 
-   * @param sessionId - Session ID
-   * @param userId - User ID
-   * @param metadata - Optional metadata updates (status, etc.)
-   */
-  async upsertUser(
+  async startExercise(
     sessionId: string,
-    userId: string,
-    metadata?: Partial<{
-      status: string;
-      currentExercise: string;
-      currentSet: number;
-    }>,
-  ): Promise<void> {
-    try {
-      const now = Date.now();
-      const presenceKey = this.getPresenceKey(sessionId);
-      const usersKey = this.getUsersKey(sessionId);
-
-      // Update presence timestamp
-      await this.redis.zAdd(presenceKey, { score: now, value: userId });
-
-      // Update user metadata if exists
-      const existingMeta = await this.redis.hGet(usersKey, userId);
-      if (existingMeta) {
-        const parsed = JSON.parse(existingMeta);
-        const updated = {
-          ...parsed,
-          lastSeenAt: now,
-          ...(metadata && {
-            status: metadata.status ?? parsed.status,
-            currentExercise: metadata.currentExercise ?? parsed.currentExercise,
-            currentSet: metadata.currentSet ?? parsed.currentSet,
-          }),
-        };
-        await this.redis.hSet(usersKey, userId, JSON.stringify(updated));
-      }
-
-      // Refresh TTL
-      await this.redis.expire(presenceKey, this.SESSION_TTL_SEC);
-    } catch (error) {
-      this.logger.error(
-        `Failed to update user ${userId} in session ${sessionId}`,
-        error,
-      );
-    }
+    exerciseId: string,
+    exerciseIndex: number,
+  ): Promise<SessionStateSnapshotDto> {
+    return this.transitionTo(sessionId, 'exercising', {
+      currentExerciseId: exerciseId,
+      currentExerciseIndex: exerciseIndex,
+      currentSetNumber: 1,
+      restTimerStartedAt: null,
+      restDurationMs: null,
+    });
   }
 
   /**
-   * Get full session state snapshot.
-   * 
-   * Returns:
-   * - Active users with metadata
-   * - Session activity timestamps
-   * - User count
-   * - Stale users (no recent heartbeat)
-   * 
-   * Performance: O(n) where n = number of users in session
-   * Typical: <1ms for sessions with <100 users
-   * 
-   * @param sessionId - Session ID
-   * @returns Session state snapshot
+   * Complete a set and transition to resting
    */
-  async getSnapshot(sessionId: string): Promise<{
-    sessionId: string;
-    users: Array<{
-      userId: string;
-      name: string;
-      role: string;
-      avatar?: string;
-      status: string;
-      joinedAt: number;
-      lastSeenAt: number;
-      isStale: boolean;
-    }>;
-    userCount: number;
-    activeCount: number;
-    lastActivityAt: number | null;
-  }> {
-    try {
-      const presenceKey = this.getPresenceKey(sessionId);
-      const usersKey = this.getUsersKey(sessionId);
-      const metadataKey = this.getMetadataKey(sessionId);
+  async completeSet(
+    sessionId: string,
+    restDurationMs: number,
+  ): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
 
-      // Fetch all data in parallel
-      const [presenceData, usersData, sessionMeta] = await Promise.all([
-        this.redis.zRangeWithScores(presenceKey, 0, -1),
-        this.redis.hGetAll(usersKey),
-        this.redis.get(metadataKey),
-      ]);
-
-      // Build presence map from sorted set
-      const presenceMap = new Map<string, number>();
-      for (const item of presenceData) {
-        presenceMap.set(item.value, item.score);
-      }
-
-      // Parse user metadata and merge with presence
-      const now = Date.now();
-      const staleThreshold = now - this.HEARTBEAT_WINDOW_SEC * 1000;
-
-      const users = Object.entries(usersData).map(([userId, metaStr]) => {
-        const meta = JSON.parse(metaStr);
-        const lastSeenAt = presenceMap.get(userId) || meta.lastSeenAt;
-        const isStale = lastSeenAt < staleThreshold;
-
-        return {
-          userId,
-          name: meta.name,
-          role: meta.role,
-          avatar: meta.avatar,
-          status: meta.status,
-          joinedAt: meta.joinedAt,
-          lastSeenAt,
-          isStale,
-          currentExercise: meta.currentExercise,
-          currentSet: meta.currentSet,
-        };
-      });
-
-      // Sort by last seen (most recent first)
-      users.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
-
-      const activeCount = users.filter((u) => !u.isStale).length;
-      const lastActivityAt = sessionMeta
-        ? JSON.parse(sessionMeta).lastActivityAt
-        : null;
-
-      return {
-        sessionId,
-        users,
-        userCount: users.length,
-        activeCount,
-        lastActivityAt,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get snapshot for session ${sessionId}`, error);
-      
-      // Graceful fallback
-      return {
-        sessionId,
-        users: [],
-        userCount: 0,
-        activeCount: 0,
-        lastActivityAt: null,
-      };
+    if (!currentSnapshot || currentSnapshot.status !== 'exercising') {
+      throw new BadRequestException('Cannot complete set: not currently exercising');
     }
+
+    return this.transitionTo(sessionId, 'resting', {
+      totalSetsCompleted: (currentSnapshot.totalSetsCompleted || 0) + 1,
+      restTimerStartedAt: Date.now(),
+      restDurationMs,
+    });
   }
 
   /**
-   * Get active user count for a session.
-   * 
-   * Faster than getSnapshot() when only count needed.
-   * 
-   * @param sessionId - Session ID
-   * @returns Number of users with recent heartbeat
+   * End rest period and return to exercising
    */
-  async getActiveUserCount(sessionId: string): Promise<number> {
-    try {
-      const presenceKey = this.getPresenceKey(sessionId);
-      const now = Date.now();
-      const staleThreshold = now - this.HEARTBEAT_WINDOW_SEC * 1000;
+  async endRest(sessionId: string): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
 
-      // Count users with score (timestamp) > staleThreshold
-      const activeCount = await this.redis.zCount(
-        presenceKey,
-        staleThreshold,
-        '+inf',
-      );
-
-      return activeCount;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get active user count for session ${sessionId}`,
-        error,
-      );
-      return 0;
+    if (!currentSnapshot || currentSnapshot.status !== 'resting') {
+      throw new BadRequestException('Cannot end rest: not currently resting');
     }
+
+    return this.transitionTo(sessionId, 'exercising', {
+      currentSetNumber: (currentSnapshot.currentSetNumber || 0) + 1,
+      restTimerStartedAt: null,
+      restDurationMs: null,
+    });
   }
 
   /**
-   * Check if user is in a session.
-   * 
-   * @param sessionId - Session ID
-   * @param userId - User ID
-   * @returns true if user is in session
+   * Pause session
    */
-  async isUserInSession(sessionId: string, userId: string): Promise<boolean> {
-    try {
-      const presenceKey = this.getPresenceKey(sessionId);
-      const score = await this.redis.zScore(presenceKey, userId);
-      return score !== null;
-    } catch (error) {
-      this.logger.error(
-        `Failed to check user ${userId} in session ${sessionId}`,
-        error,
-      );
-      return false;
+  async pause(sessionId: string): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
+
+    if (!currentSnapshot) {
+      throw new BadRequestException(`Session ${sessionId} not found`);
     }
+
+    if (currentSnapshot.status === 'paused') {
+      return currentSnapshot; // Already paused - idempotent
+    }
+
+    if (currentSnapshot.status === 'completed') {
+      throw new BadRequestException('Cannot pause a completed session');
+    }
+
+    return this.transitionTo(sessionId, 'paused', {
+      // Preserve rest timer if paused during rest
+      metadata: {
+        ...currentSnapshot.metadata,
+        pausedFromState: currentSnapshot.status,
+        pausedAt: Date.now(),
+      },
+    });
   }
 
   /**
-   * Remove stale users from all session keys.
-   * 
-   * Should be called periodically (e.g., every 5 minutes) via cron.
-   * Removes users who haven't sent heartbeat in HEARTBEAT_WINDOW_SEC.
-   * 
-   * @param sessionId - Session ID to clean
+   * Resume from pause
    */
-  async removeStaleUsers(sessionId: string): Promise<void> {
-    try {
-      const presenceKey = this.getPresenceKey(sessionId);
-      const usersKey = this.getUsersKey(sessionId);
-      const now = Date.now();
-      const staleThreshold = now - this.HEARTBEAT_WINDOW_SEC * 1000;
+  async resume(sessionId: string): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
 
-      // Find stale users
-      const staleUsers = await this.redis.zRangeByScore(
-        presenceKey,
-        0,
-        staleThreshold,
-      );
-
-      if (staleUsers.length === 0) {
-        return;
-      }
-
-      // Remove stale users
-      const pipeline = this.redis.multi();
-      for (const userId of staleUsers) {
-        pipeline.zRem(presenceKey, userId);
-        pipeline.hDel(usersKey, userId);
-      }
-      await pipeline.exec();
-
-      this.logger.debug(
-        `Removed ${staleUsers.length} stale users from session ${sessionId}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to remove stale users from session ${sessionId}`,
-        error,
-      );
+    if (!currentSnapshot || currentSnapshot.status !== 'paused') {
+      throw new BadRequestException('Cannot resume: session not paused');
     }
+
+    // Resume to the state we were in before pausing
+    const previousState = currentSnapshot.metadata?.pausedFromState as SessionState;
+    const resumeState = previousState && ['exercising', 'resting'].includes(previousState)
+      ? previousState
+      : 'exercising';
+
+    return this.transitionTo(sessionId, resumeState, {
+      metadata: {
+        ...currentSnapshot.metadata,
+        pausedFromState: undefined,
+        pausedAt: undefined,
+        resumedAt: Date.now(),
+      },
+    });
   }
 
   /**
-   * Clean up all session keys.
-   * 
-   * Called when session ends or becomes empty.
-   * 
-   * @param sessionId - Session ID to clean up
+   * Complete session (terminal state)
    */
-  async cleanupSession(sessionId: string): Promise<void> {
-    try {
-      const keys = [
-        this.getPresenceKey(sessionId),
-        this.getUsersKey(sessionId),
-        this.getMetadataKey(sessionId),
-      ];
-
-      await this.redis.del(keys);
-
-      this.logger.debug(`Cleaned up session ${sessionId}`);
-    } catch (error) {
-      this.logger.error(`Failed to cleanup session ${sessionId}`, error);
-    }
+  async complete(sessionId: string): Promise<SessionStateSnapshotDto> {
+    return this.transitionTo(sessionId, 'completed', {
+      currentExerciseId: null,
+      restTimerStartedAt: null,
+      restDurationMs: null,
+    });
   }
 
   /**
-   * Update session-level metadata.
-   * 
-   * Use for ephemeral session state like:
-   * - Current exercise being performed
-   * - Workout phase (warmup, main, cooldown)
-   * - Playlist/music info
-   * - Timer/countdown values
-   * 
-   * @param sessionId - Session ID
-   * @param metadata - Metadata to store
+   * Update arbitrary metadata
    */
-  async updateSessionMetadata(
+  async updateMetadata(
     sessionId: string,
     metadata: Record<string, any>,
-  ): Promise<void> {
-    try {
-      const metadataKey = this.getMetadataKey(sessionId);
-      const existing = await this.redis.get(metadataKey);
-      const parsed = existing ? JSON.parse(existing) : {};
+  ): Promise<SessionStateSnapshotDto> {
+    const currentSnapshot = await this.getSnapshot(sessionId);
 
-      const updated = {
-        ...parsed,
+    if (!currentSnapshot) {
+      throw new BadRequestException(`Session ${sessionId} not found`);
+    }
+
+    const updatedSnapshot: SessionStateSnapshotDto = {
+      ...currentSnapshot,
+      metadata: {
+        ...currentSnapshot.metadata,
         ...metadata,
-        lastActivityAt: Date.now(),
-      };
+      },
+      lastActivityAt: new Date(),
+    };
 
-      await this.redis.set(
-        metadataKey,
-        JSON.stringify(updated),
-        { EX: this.SESSION_TTL_SEC },
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to update metadata for session ${sessionId}`,
-        error,
-      );
-    }
+    await this.persistState(sessionId, updatedSnapshot);
+    return updatedSnapshot;
   }
 
   /**
-   * Broadcast a message to all users in a session.
-   * 
-   * Note: This method only stores the message in Redis.
-   * The WebSocket gateway should poll or subscribe to deliver it.
-   * 
-   * For real-time delivery, use EventEmitter2 or WebSocket gateway directly.
-   * 
-   * @param sessionId - Session ID
-   * @param message - Message payload
+   * Delete state from Redis (for cleanup or cancellation)
    */
-  async broadcastMessage(
-    sessionId: string,
-    message: {
-      type: string;
-      payload: any;
-      fromUserId?: string;
-    },
-  ): Promise<void> {
-    try {
-      const messagesKey = `session:${sessionId}:messages`;
-      const messageData = JSON.stringify({
-        ...message,
-        timestamp: Date.now(),
-      });
-
-      // Use list (RPUSH) to maintain message order
-      await this.redis.rPush(messagesKey, messageData);
-
-      // Keep only last 100 messages
-      await this.redis.lTrim(messagesKey, -100, -1);
-
-      // Set TTL
-      await this.redis.expire(messagesKey, this.SESSION_TTL_SEC);
-    } catch (error) {
-      this.logger.error(
-        `Failed to broadcast message to session ${sessionId}`,
-        error,
-      );
-    }
-  }
-
-  // ==================== PRIVATE HELPER METHODS ====================
-
-  /**
-   * Get Redis key for session presence sorted set.
-   * 
-   * @param sessionId - Session ID
-   * @returns Redis key
-   */
-  private getPresenceKey(sessionId: string): string {
-    return `session:${sessionId}:presence`;
+  async deleteState(sessionId: string): Promise<void> {
+    const key = this.getRedisKey(sessionId);
+    await this.redis.del(key);
+    this.logger.log(`Deleted state for session ${sessionId}`);
   }
 
   /**
-   * Get Redis key for session users hash.
-   * 
-   * @param sessionId - Session ID
-   * @returns Redis key
+   * Check if a state transition is valid
    */
-  private getUsersKey(sessionId: string): string {
-    return `session:${sessionId}:users`;
+  isTransitionValid(currentState: SessionState, nextState: SessionState): boolean {
+    const allowedTransitions = STATE_TRANSITIONS[currentState];
+    return allowedTransitions.includes(nextState);
   }
 
   /**
-   * Get Redis key for session metadata string.
-   * 
-   * @param sessionId - Session ID
-   * @returns Redis key
+   * Persist state to Redis with TTL
    */
-  private getMetadataKey(sessionId: string): string {
-    return `session:${sessionId}:metadata`;
+  private async persistState(sessionId: string, snapshot: SessionStateSnapshotDto): Promise<void> {
+    const key = this.getRedisKey(sessionId);
+    const data = JSON.stringify(snapshot);
+
+    await this.redis.setEx(key, this.STATE_TTL_SECONDS, data);
+  }
+
+  /**
+   * Generate Redis key for session state
+   */
+  private getRedisKey(sessionId: string): string {
+    return `${this.STATE_KEY_PREFIX}${sessionId}`;
+  }
+
+  /**
+   * Extend TTL for active sessions (call on heartbeat)
+   */
+  async extendTTL(sessionId: string): Promise<void> {
+    const key = this.getRedisKey(sessionId);
+    await this.redis.expire(key, this.STATE_TTL_SECONDS);
   }
 }

@@ -10,5 +10,3 @@ export default registerAs('app', () => ({
   },
   trackSessions: process.env.TRACK_SESSIONS !== 'false', // Default true
 }));
-
-

@@ -1,4 +1,12 @@
-import { IsString, IsEnum, IsOptional, IsNumber, Min, Max, IsDecimal } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsNumber,
+  Min,
+  Max,
+  IsDecimal,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { Sex, ExperienceLevel, GoalType, UnitSystem } from '@prisma/client';
 

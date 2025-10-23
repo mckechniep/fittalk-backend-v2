@@ -25,21 +25,23 @@ import {
       cache: true,
       load: [appConfig, supabaseConfig, databaseConfig, redisConfig],
     }),
-    
+
     // Rate limiting
-    ThrottlerModule.forRoot([{
-      ttl: 60000, // 60 seconds
-      limit: 10,  // 10 requests per minute
-    }]),
-    
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 seconds
+        limit: 10, // 10 requests per minute
+      },
+    ]),
+
     // Infrastructure modules (@Global - available everywhere)
-    PrismaModule,      // Database access
-    RedisModule,       // Distributed locks, caching, WebSocket adapter
-    
+    PrismaModule, // Database access
+    RedisModule, // Distributed locks, caching, WebSocket adapter
+
     // Feature modules
-    AuthModule,        // Authentication, user management
+    AuthModule, // Authentication, user management
     ConsultationModule, // Onboarding, availability
-    WorkoutsModule,    // Scheduling, live sessions (Phase 1: scheduling only)
+    WorkoutsModule, // Scheduling, live sessions (Phase 1: scheduling only)
   ],
   controllers: [AppController],
   providers: [

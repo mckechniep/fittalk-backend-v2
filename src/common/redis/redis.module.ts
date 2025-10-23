@@ -6,31 +6,31 @@ import type { RedisClientType } from 'redis';
 
 /**
  * Redis Module Factory
- * 
+ *
  * Provides Redis client for distributed operations across the application.
- * 
+ *
  * Uses node-redis (redis package v5.x) NOT ioredis.
  * Your package.json has "redis": "^5.8.3" installed.
- * 
+ *
  * Design decisions:
  * - @Global() decorator: Redis available everywhere (like PrismaService)
  * - Single client instance: Shared connection pool across app
  * - Async factory: Ensures connection established before app starts
  * - Graceful shutdown: Disconnects cleanly on app termination
  * - Fail-fast: App won't start if Redis unreachable
- * 
+ *
  * Use cases:
  * - Distributed locks (schedule generation, session state)
  * - Socket.io adapter (WebSocket multi-instance broadcasting)
  * - Caching (consultation questions, workout plans)
  * - Presence tracking (active workout sessions)
  * - Rate limiting (via @nestjs/throttler with Redis store)
- * 
+ *
  * Connection lifecycle:
  * 1. Module initialization → create client → connect
  * 2. App running → client available for injection
  * 3. App shutdown → onModuleDestroy → disconnect
- * 
+ *
  * Environment configuration:
  * - REDIS_URL: Connection string (default: redis://localhost:6379)
  * - Example: redis://username:password@host:6379/0
@@ -45,7 +45,9 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
   providers: [
     {
       provide: REDIS_CLIENT,
-      useFactory: async (configService: ConfigService): Promise<RedisClientType> => {
+      useFactory: async (
+        configService: ConfigService,
+      ): Promise<RedisClientType> => {
         const redisUrl = configService.get<string>('redis.url');
 
         if (!redisUrl) {
@@ -59,7 +61,9 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
             reconnectStrategy: (retries) => {
               // Exponential backoff: 100ms, 200ms, 400ms, 800ms, max 3000ms
               const delay = Math.min(100 * Math.pow(2, retries), 3000);
-              console.log(`Redis reconnecting (attempt ${retries + 1}), delay: ${delay}ms`);
+              console.log(
+                `Redis reconnecting (attempt ${retries + 1}), delay: ${delay}ms`,
+              );
               return delay;
             },
             connectTimeout: 10000, // 10 second connection timeout

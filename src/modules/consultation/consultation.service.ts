@@ -13,9 +13,7 @@ import {
   ConsultationAnswerDto,
 } from './dtos/create-consultation.dto';
 import { UpdateConsultationDto } from './dtos/update-consultation.dto';
-import {
-  ConsultationResponseDto,
-} from './dtos/consultation-response.dto';
+import { ConsultationResponseDto } from './dtos/consultation-response.dto';
 import {
   UpsertAvailabilityDto,
   AvailabilityWindowResponseDto,
@@ -24,16 +22,16 @@ import {
 
 /**
  * Consultation & Availability Service
- * 
+ *
  * Handles all business logic for user onboarding consultation and weekly availability.
- * 
+ *
  * Design principles:
  * - Ownership validation: All operations verify user owns the resource
  * - Transactional integrity: Multi-step operations wrapped in transactions
  * - Rich error messages: Helpful errors for client debugging
  * - Separation of concerns: Database logic here, HTTP logic in controller
  * - Idempotency where possible: Safe to retry operations
- * 
+ *
  * Dependencies:
  * - PrismaService: Database access
  * - Logger: Structured logging for observability
@@ -48,12 +46,12 @@ export class ConsultationService {
 
   /**
    * Create new consultation session.
-   * 
+   *
    * Flow:
    * 1. Create session record (status: pending)
    * 2. If answers provided, save them atomically
    * 3. Return full session with answers
-   * 
+   *
    * Transaction: Ensures session + answers created together or not at all
    * Idempotency: Not idempotent - creates new session each time
    */
@@ -99,9 +97,9 @@ export class ConsultationService {
 
   /**
    * Get consultation session by ID.
-   * 
+   *
    * Security: Verifies session belongs to requesting user
-   * 
+   *
    * Returns: Full session with answers and nested question details
    * Throws: 404 if not found, 403 if wrong user
    */
@@ -142,9 +140,9 @@ export class ConsultationService {
 
   /**
    * Get user's most recent consultation session.
-   * 
+   *
    * Use case: Check onboarding status on app launch
-   * 
+   *
    * Returns: Most recent session or null if none exist
    */
   async getCurrentSession(
@@ -176,13 +174,13 @@ export class ConsultationService {
 
   /**
    * Update consultation session answers (partial update).
-   * 
+   *
    * Flow:
    * 1. Verify session exists and user owns it
    * 2. Check session is not already completed
    * 3. Upsert answers (insert new, update existing)
    * 4. Return updated session
-   * 
+   *
    * Transaction: Ensures all answers saved together
    * Idempotency: Yes - same answers produce same result
    */
@@ -214,9 +212,9 @@ export class ConsultationService {
 
   /**
    * Submit single answer (alternative to batch update).
-   * 
+   *
    * Use case: Mobile saves progress after each question
-   * 
+   *
    * Implementation: Wraps single answer in array and calls batch logic
    */
   async submitAnswer(
@@ -231,16 +229,16 @@ export class ConsultationService {
 
   /**
    * Mark consultation as completed.
-   * 
+   *
    * Validation:
    * - Session must be pending (not already completed)
    * - All required questions must be answered
-   * 
+   *
    * Side effects:
    * - Sets status = 'completed', completedAt = now()
    * - TODO: Trigger AI plan generation (queue job)
    * - TODO: Send notification "Your plan is being generated"
-   * 
+   *
    * Returns: Completed session
    */
   async completeSession(
@@ -276,11 +274,11 @@ export class ConsultationService {
 
   /**
    * Get all active consultation questions.
-   * 
+   *
    * Use case: Mobile fetches questions to render onboarding flow
-   * 
+   *
    * Returns: Questions ordered by creation (defines question order)
-   * 
+   *
    * Caching: Consider Redis cache with 1 hour TTL (static data)
    */
   async getActiveQuestions() {
@@ -296,15 +294,15 @@ export class ConsultationService {
 
   /**
    * Upsert availability windows (replace all).
-   * 
+   *
    * Strategy: "Replace all" - delete existing, insert new
-   * 
+   *
    * Validation:
    * - No overlapping windows on same day
    * - startMin < endMin for each window
-   * 
+   *
    * Transaction: Atomic delete + insert prevents partial state
-   * 
+   *
    * Returns: Created windows with database IDs
    */
   async upsertAvailability(
@@ -361,7 +359,7 @@ export class ConsultationService {
 
   /**
    * Get user's availability windows.
-   * 
+   *
    * Returns: Ordered by day (Sun-Sat), then start time
    */
   async getAvailability(
@@ -377,9 +375,9 @@ export class ConsultationService {
 
   /**
    * Delete single availability window.
-   * 
+   *
    * Security: Verifies window belongs to user
-   * 
+   *
    * Returns: void
    * Throws: 404 if not found, 403 if wrong user
    */
@@ -415,7 +413,7 @@ export class ConsultationService {
 
   /**
    * Get session or throw appropriate error.
-   * 
+   *
    * Helper to reduce boilerplate in methods that need session validation.
    */
   private async getSessionOrThrow(sessionId: string, userId: string) {
@@ -438,12 +436,12 @@ export class ConsultationService {
 
   /**
    * Save answers in transaction (upsert logic).
-   * 
+   *
    * Strategy: For each answer:
    * - Check if answer exists for this session + questionId
    * - If exists: UPDATE value and timestamp
    * - If not: INSERT new answer
-   * 
+   *
    * Transaction parameter: Allows calling from parent transaction
    */
   private async saveAnswersInTransaction(
@@ -488,12 +486,12 @@ export class ConsultationService {
 
   /**
    * Validate all required questions are answered.
-   * 
+   *
    * Logic:
    * 1. Get all required questions (future: add isRequired field to question)
    * 2. Get answered questions for session
    * 3. Check if all required questions have answers
-   * 
+   *
    * TODO: Add `isRequired` field to ConsultationQuestion schema
    * For now: Assumes all questions are required
    */
@@ -525,12 +523,12 @@ export class ConsultationService {
 
   /**
    * Validate no overlapping availability windows.
-   * 
+   *
    * Algorithm:
    * 1. Group windows by day
    * 2. For each day, check all pairs for overlap
    * 3. Overlap exists if: A.start < B.end AND B.start < A.end
-   * 
+   *
    * Time complexity: O(n²) worst case, but n is small (max ~20 windows)
    */
   private validateNoOverlaps(windows: AvailabilityWindowDto[]) {
@@ -556,7 +554,7 @@ export class ConsultationService {
 
   /**
    * Transform Prisma result to ConsultationResponseDto.
-   * 
+   *
    * Uses class-transformer for clean mapping.
    * @Expose() decorators control serialization.
    */
@@ -585,12 +583,12 @@ export class ConsultationService {
   /**
    * Transform Prisma AvailabilityWindow to DTO.
    */
-  private transformAvailabilityToDto(window: any): AvailabilityWindowResponseDto {
-    return plainToInstance(
-      AvailabilityWindowResponseDto,
-      window,
-      { excludeExtraneousValues: true },
-    );
+  private transformAvailabilityToDto(
+    window: any,
+  ): AvailabilityWindowResponseDto {
+    return plainToInstance(AvailabilityWindowResponseDto, window, {
+      excludeExtraneousValues: true,
+    });
   }
 
   /**
@@ -606,7 +604,15 @@ export class ConsultationService {
    * Get day name from number (for error messages).
    */
   private getDayName(dayOfWeek: number): string {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const days = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ];
     return days[dayOfWeek] || 'Unknown';
   }
 }

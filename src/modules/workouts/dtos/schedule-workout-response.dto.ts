@@ -114,13 +114,13 @@ export class WorkoutPlanSummaryDto {
 /**
  * Response DTO for scheduled workout.
  * Depends on: WorkoutPlanSummaryDto, WorkoutDayDetailsDto
- * 
+ *
  * Design decisions:
  * - Includes nested WorkoutDay details (avoid N+1 queries)
  * - Includes nested WorkoutPlan summary (context for mobile)
  * - Uses @Expose() for explicit serialization control
  * - Computed fields derived from data (not stored separately)
- * 
+ *
  * Use cases:
  * - GET /workouts/schedule/week - List week's scheduled workouts
  * - GET /workouts/schedule/upcoming - Next workout to do

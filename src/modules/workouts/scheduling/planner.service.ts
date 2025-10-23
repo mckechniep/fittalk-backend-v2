@@ -3,17 +3,17 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * Planner Service
- * 
+ *
  * Optimal scheduling algorithm - no database access, no side effects.
  * Takes workout days and availability windows, returns globally optimal schedule.
- * 
+ *
  * Design principles:
  * - Pure functions: Same inputs always produce same outputs
  * - No external dependencies: Fully unit-testable in isolation
  * - Backtracking with pruning: Finds best possible schedule
  * - Priority-aware: Prefers higher-priority windows when multiple solutions exist
  * - Deterministic: Consistent results for reproducibility
- * 
+ *
  * Algorithm overview (Backtracking):
  * 1. Estimate duration for each workout day
  * 2. Sort availability windows by priority (descending), then start time (ascending)
@@ -23,12 +23,12 @@ import { Injectable, Logger } from '@nestjs/common';
  *    c. Track best solution found (maximum workouts scheduled)
  *    d. Prune branches that cannot beat current best
  * 4. Return optimal schedule and unscheduled days with reasons
- * 
+ *
  * Complexity: O(m^n) worst case, heavily pruned in practice
  * - n = workout days (typically 3-7)
  * - m = availability windows (typically 5-20)
  * Real-world: < 50ms for n=7, m=20 (guarantees optimal solution)
- * 
+ *
  * Optimality: Maximizes number of workouts scheduled.
  * Tie-breaking: Prefers higher-priority windows, then earlier times.
  */
@@ -39,7 +39,7 @@ export class PlannerService {
   /**
    * Default workout duration estimates by focus type (in minutes).
    * Used when workout items don't have duration info.
-   * 
+   *
    * Based on typical session lengths:
    * - Strength: 60-90 min (heavy compounds, longer rest)
    * - Hypertrophy: 45-75 min (moderate volume)
@@ -67,13 +67,13 @@ export class PlannerService {
 
   /**
    * Generate weekly schedule for workout days.
-   * 
+   *
    * @param workoutDays - Days from user's WorkoutPlan to schedule
    * @param availabilityWindows - User's weekly availability
    * @param weekStartDate - Start of target week (Date object)
    * @param existingScheduled - Already scheduled workouts (for overlap check)
    * @returns Scheduled and unscheduled workout assignments
-   * 
+   *
    * Pure function: No DB access, no mutations, deterministic.
    */
   scheduleWeek(
@@ -118,7 +118,9 @@ export class PlannerService {
     // Track occupied time slots to prevent overlaps (includes existing scheduled workouts)
     const initialOccupiedSlots: OccupiedSlot[] = existingScheduled.map((s) => ({
       start: s.scheduledAt,
-      end: new Date(s.scheduledAt.getTime() + s.estimatedDurationMin * 60 * 1000),
+      end: new Date(
+        s.scheduledAt.getTime() + s.estimatedDurationMin * 60 * 1000,
+      ),
     }));
 
     // Pre-compute durations for all workout days (cache for backtracking)
@@ -161,7 +163,7 @@ export class PlannerService {
 
   /**
    * Find optimal schedule using backtracking with pruning.
-   * 
+   *
    * Algorithm:
    * 1. Base case: all workouts processed → compare with best solution
    * 2. Pruning: if current + remaining can't beat best, stop exploring
@@ -171,9 +173,9 @@ export class PlannerService {
    *    c. Backtrack (remove placement and try next window)
    * 4. Also try NOT scheduling current workout (skip it)
    * 5. Return best solution found across all branches
-   * 
+   *
    * Guarantees: Finds schedule with maximum number of workouts scheduled.
-   * 
+   *
    * @param workoutDays - Workouts to schedule (with pre-computed durations)
    * @param windows - Sorted availability windows
    * @param initialOccupied - Already occupied time slots
@@ -188,7 +190,7 @@ export class PlannerService {
 
     /**
      * Backtracking recursive function.
-     * 
+     *
      * @param index - Current workout index being processed
      * @param currentSchedule - Workouts scheduled so far in this branch
      * @param occupiedSlots - Time slots occupied in this branch
@@ -250,7 +252,10 @@ export class PlannerService {
 
       // Also try NOT scheduling this workout (skip it)
       // This allows algorithm to skip a difficult workout to fit more later ones
-      if (!foundValidPlacement || currentSchedule.length < bestSchedule.length) {
+      if (
+        !foundValidPlacement ||
+        currentSchedule.length < bestSchedule.length
+      ) {
         backtrack(index + 1, currentSchedule, occupiedSlots);
       }
     };
@@ -263,12 +268,12 @@ export class PlannerService {
 
   /**
    * Try to place a workout in a specific window.
-   * 
+   *
    * Checks:
    * 1. Workout duration fits in window
    * 2. No overlap with occupied slots
    * 3. Doesn't exceed window end time
-   * 
+   *
    * @returns ScheduledAssignment if placement valid, null otherwise
    */
   private tryPlaceInWindow(
@@ -315,21 +320,21 @@ export class PlannerService {
 
   /**
    * Estimate workout duration in minutes.
-   * 
+   *
    * Calculation:
    * 1. Sum item durations: (sets * (work_time + rest_time))
    * 2. Add buffer (warm-up, cool-down, setup)
    * 3. If no items, use default by focus type
-   * 
+   *
    * Work time estimation:
    * - Assume ~5 seconds per rep on average
    * - Set time = targetReps * 5 seconds (or 30s default if reps unknown)
-   * 
+   *
    * Example: 3 sets of 10 reps with 90s rest:
    * - Work: 3 * (10 * 5s) = 150s = 2.5 min
    * - Rest: 3 * 90s = 270s = 4.5 min
    * - Total: 7 min per exercise
-   * 
+   *
    * Public: SchedulingService needs this for existing workout duration estimation
    */
   estimateWorkoutDuration(day: WorkoutDayInput): number {
@@ -361,14 +366,14 @@ export class PlannerService {
 
   /**
    * Prepare availability windows for scheduling.
-   * 
+   *
    * Transforms relative windows (dayOfWeek, startMin, endMin) into
    * absolute date-time windows for the target week.
-   * 
+   *
    * Sorts by:
    * 1. Priority (descending) - prefer higher-priority windows
    * 2. Start time (ascending) - earlier windows first
-   * 
+   *
    * @param windows - User's weekly availability (recurring)
    * @param weekStart - Start date of target week
    * @returns Sorted absolute time windows
@@ -410,11 +415,11 @@ export class PlannerService {
 
   /**
    * Get absolute date for a specific day of week in a given week.
-   * 
+   *
    * @param weekStart - Monday of target week (or configured week start)
    * @param dayOfWeek - 0=Sunday, 1=Monday ... 6=Saturday
    * @returns Date object for that specific day
-   * 
+   *
    * Example:
    * weekStart = 2025-01-13 (Monday)
    * dayOfWeek = 3 (Wednesday)
@@ -426,7 +431,7 @@ export class PlannerService {
 
     // Calculate offset from week start
     let offset = dayOfWeek - weekStartDay;
-    
+
     // Handle week wraparound (e.g., Sunday in a Monday-start week)
     if (offset < 0) {
       offset += 7;
@@ -439,7 +444,7 @@ export class PlannerService {
   /**
    * Determine why a workout couldn't be scheduled.
    * Provides actionable feedback for the user.
-   * 
+   *
    * Checks in order:
    * 1. No availability on that day of week
    * 2. Workout longer than largest window on that day
@@ -460,7 +465,9 @@ export class PlannerService {
     }
 
     // Check if workout is too long for any window
-    const longestWindow = Math.max(...dayWindows.map((w) => w.endMin - w.startMin));
+    const longestWindow = Math.max(
+      ...dayWindows.map((w) => w.endMin - w.startMin),
+    );
     if (durationMin > longestWindow) {
       return `Workout duration (${durationMin} min) exceeds largest available window (${longestWindow} min) on ${this.getDayName(day.dayNumber - 1)}`;
     }
@@ -469,7 +476,9 @@ export class PlannerService {
     const allOccupied = dayWindows.every((window) => {
       return occupiedSlots.some((slot) => {
         // Check if window overlaps with any occupied slot
-        return window.absoluteStart < slot.end && window.absoluteEnd > slot.start;
+        return (
+          window.absoluteStart < slot.end && window.absoluteEnd > slot.start
+        );
       });
     });
 
@@ -484,12 +493,20 @@ export class PlannerService {
   /**
    * Get day name from day number.
    * Matches WorkoutDay.dayNumber convention (1=Monday ... 7=Sunday).
-   * 
+   *
    * Note: dayNumber uses 1-7 (Monday-Sunday), but dayOfWeek uses 0-6 (Sunday-Saturday).
    * This conversion handles the mismatch.
    */
   private getDayName(dayOfWeek: number): string {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const days = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ];
     return days[dayOfWeek] || 'Unknown';
   }
 }
@@ -504,8 +521,8 @@ export interface WorkoutDayInput {
   id: string;
   planId: string;
   weekNumber: number;
-  dayNumber: number;  // 1-7 (Monday-Sunday)
-  focus: string;      // strength, hypertrophy, cardio, mobility, mixed
+  dayNumber: number; // 1-7 (Monday-Sunday)
+  focus: string; // strength, hypertrophy, cardio, mobility, mixed
   items?: WorkoutItemInput[];
 }
 
@@ -524,10 +541,10 @@ export interface WorkoutItemInput {
  * Relative times that get converted to absolute for target week.
  */
 export interface AvailabilityWindowInput {
-  dayOfWeek: number;  // 0=Sunday ... 6=Saturday
-  startMin: number;   // 0-1439 (minutes from midnight)
-  endMin: number;     // 0-1439
-  priority: number;   // 0-10 (higher = more preferred)
+  dayOfWeek: number; // 0=Sunday ... 6=Saturday
+  startMin: number; // 0-1439 (minutes from midnight)
+  endMin: number; // 0-1439
+  priority: number; // 0-10 (higher = more preferred)
 }
 
 /**
@@ -546,7 +563,7 @@ interface PreparedWindow {
   startMin: number;
   endMin: number;
   priority: number;
-  absoluteStart: Date;  // Actual date-time for this specific week
+  absoluteStart: Date; // Actual date-time for this specific week
   absoluteEnd: Date;
 }
 
@@ -564,7 +581,7 @@ interface OccupiedSlot {
 export interface ScheduledAssignment {
   dayId: string;
   planId: string;
-  scheduledAt: Date;          // When workout starts
+  scheduledAt: Date; // When workout starts
   estimatedDurationMin: number;
 }
 
@@ -576,7 +593,7 @@ export interface UnscheduledAssignment {
   weekNumber: number;
   dayNumber: number;
   focus: string;
-  reason: string;             // Why it couldn't be scheduled
+  reason: string; // Why it couldn't be scheduled
   estimatedDurationMin: number;
 }
 
