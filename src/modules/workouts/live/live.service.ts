@@ -11,6 +11,7 @@ import { SessionStateService } from './session-state.service';
 import { REDIS_CLIENT } from '../../../common/redis/redis.module';
 import type { RedisClientType } from 'redis';
 import { plainToInstance } from 'class-transformer';
+import { Prisma } from '@prisma/client';
 import {
   CreateLiveSessionDto,
   UpdateLiveSessionDto,
@@ -245,15 +246,18 @@ export class LiveSessionService {
       await this.sessionState.complete(sessionId);
     }
 
-    // Update database
+    // Update database - merge final state into stateJson
+    const currentStateJson = (session.stateJson as Prisma.JsonObject) || {};
+    const updatedStateJson: Prisma.JsonObject = {
+      ...currentStateJson,
+      final3State: finalState as Prisma.JsonValue,
+    };
+
     const ended = await this.prisma.liveWorkoutSession.update({
       where: { id: sessionId },
       data: {
         endedAt: new Date(),
-        stateJson: {
-          ...(session.stateJson as Record<string, any> || {}),
-          finalState,
-        },
+        stateJson: updatedStateJson,
       },
     });
 

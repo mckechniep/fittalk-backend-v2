@@ -10,9 +10,10 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LiveSessionService } from './live.service';
 import { SessionStateService } from './session-state.service';
-import { LiveEventDto, JoinSessionDto } from './dtos';
+import { LiveEventDto } from './dtos';
 import { createWsSuccess, createWsError } from './dtos/websocket-response.dto';
 
 /**
@@ -78,6 +79,7 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   constructor(
     private readonly liveService: LiveSessionService,
     private readonly sessionState: SessionStateService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -91,18 +93,95 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * Handle client connection
    */
   async handleConnection(client: AuthenticatedSocket) {
-    const userId = client.user?.id;
+    try {
+      // Authenticate the client
+      const user = await this.authenticateClient(client);
 
-    if (!userId) {
-      this.logger.warn(`Unauthenticated connection attempt: ${client.id}`);
+      if (!user) {
+        this.logger.warn(`Unauthenticated connection attempt: ${client.id}`);
+        client.emit('error', createWsError('connection', 'UNAUTHORIZED', 'Authentication failed'));
+        client.disconnect();
+        return;
+      }
+
+      // Attach user to socket
+      client.user = user;
+
+      // Join user-specific room for multi-device sync
+      await client.join(`user:${user.id}`);
+
+      this.logger.log(`Client connected: ${client.id} (user: ${user.id})`);
+
+      // Send connection success
+      client.emit('connected', createWsSuccess('connected', { userId: user.id, socketId: client.id }));
+    } catch (error) {
+      this.logger.error(`Connection error: ${error.message}`);
+      client.emit('error', createWsError('connection', 'ERROR', error.message));
       client.disconnect();
-      return;
+    }
+  }
+
+  /**
+   * Authenticate WebSocket client using JWT
+   */
+  private async authenticateClient(client: Socket): Promise<{ id: string; email?: string } | null> {
+    try {
+      const token = this.extractToken(client);
+
+      if (!token) {
+        return null;
+      }
+
+      // Verify JWT using Supabase secret
+      const jwt = require('jsonwebtoken');
+      const jwtSecret = this.configService.get<string>('supabase.jwtSecret');
+      const supabaseUrl = this.configService.get<string>('supabase.url');
+
+      if (!jwtSecret) {
+        this.logger.error('SUPABASE_JWT_SECRET not configured');
+        return null;
+      }
+
+      const payload = jwt.verify(token, jwtSecret, {
+        algorithms: ['HS256'],
+        issuer: `${supabaseUrl}/auth/v1`,
+        audience: 'authenticated',
+      });
+
+      return {
+        id: payload.sub,
+        email: payload.email,
+      };
+    } catch (error) {
+      this.logger.error(`Token verification failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Extract JWT token from socket handshake
+   */
+  private extractToken(client: Socket): string | null {
+    const auth = client.handshake.auth;
+    const query = client.handshake.query;
+
+    // Try auth.token first (recommended)
+    if (auth && auth.token) {
+      return auth.token;
     }
 
-    // Join user-specific room for multi-device sync
-    await client.join(`user:${userId}`);
+    // Fallback to query parameter
+    if (query && query.token) {
+      return Array.isArray(query.token) ? query.token[0] : query.token;
+    }
 
-    this.logger.log(`Client connected: ${client.id} (user: ${userId})`);
+    // Try Authorization header
+    const authHeader = client.handshake.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      return authHeader.substring(7);
+    }
+
+    return null;
   }
 
   /**
@@ -119,7 +198,7 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('join-session')
   async handleJoinSession(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody(new ValidationPipe()) payload: { sessionId: string; options?: JoinSessionDto },
+    @MessageBody() payload: { sessionId: string },
   ) {
     const userId = client.user?.id;
 
