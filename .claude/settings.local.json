@@ -3,7 +3,11 @@
     "allow": [
       "Bash(cat:*)",
       "Bash(chmod:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk status --porcelain)",
+      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk check-ignore .env)",
+      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk ls-files:*)",
+      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk log --all --full-history --source -- .env)"
     ],
     "deny": [],
     "ask": []
