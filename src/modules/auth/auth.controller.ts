@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from './strategies/jwt.strategy';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
+import { UpdateDeviceTokenDto } from './dto/update-device-token.dto';
 
 @Controller('auth')
 @UseGuards(JwtAuthGuard)
@@ -82,6 +83,8 @@ export class AuthController {
     return this.authService.revokeAllOtherSessions(user.id, user.sessionId);
   }
 
+  // ==================== DEVICE MANAGEMENT ====================
+
   /**
    * Register device for push notifications
    */
@@ -94,6 +97,49 @@ export class AuthController {
   }
 
   /**
+   * Get all user devices
+   */
+  @Get('devices')
+  async getDevices(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.getUserDevices(user.id);
+  }
+
+  /**
+   * Update device push token
+   */
+  @Put('devices/:deviceId')
+  async updateDeviceToken(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: UpdateDeviceTokenDto,
+  ) {
+    return this.authService.updateDeviceToken(user.id, deviceId, dto);
+  }
+
+  /**
+   * Delete/revoke a device
+   */
+  @Delete('devices/:deviceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeDevice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.authService.revokeDevice(user.id, deviceId);
+  }
+
+  /**
+   * Verify device exists and is not revoked
+   */
+  @Get('devices/:deviceId/verify')
+  async verifyDevice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.authService.verifyDevice(user.id, deviceId);
+  }
+
+  /**
    * Health check endpoint (public)
    */
   @Get('health')
@@ -102,4 +148,3 @@ export class AuthController {
     return { status: 'ok', timestamp: new Date().toISOString() };
   }
 }
-

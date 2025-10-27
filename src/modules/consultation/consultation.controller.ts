@@ -1,19 +1,19 @@
 // consultation.controller.ts
 
 import {
-    Controller,
-    Get,
-    Post,
-    Patch,
-    Delete,
-    Body,
-    Param,
-    HttpCode,
-    HttpStatus,
-    UseGuards,
-    ParseUUIDPipe,
-} from '@nestjs/common'
-import { ConsultationService } from './consultation.service'
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+import { ConsultationService } from './consultation.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
@@ -23,22 +23,20 @@ import {
 import { UpdateConsultationDto } from './dtos/update-consultation.dto';
 import { ConsultationResponseDto } from './dtos/consultation-response.dto';
 
-
-
 /**
  * Consultation Controller
- * 
+ *
  * Handles user onboarding consultation flow and question management.
  * All routes require JWT authentication - userId extracted from token.
- * 
+ *
  * Note: Availability routes moved to AvailabilityController (separate resource).
- * 
+ *
  * Design decisions:
  * - RESTful conventions: GET/POST/PATCH/DELETE with proper status codes
  * - Resource ownership enforced: users can only access their own data
  * - No admin overrides here (separate admin module if needed)
  * - Validation happens at DTO layer, business logic in service
- * 
+ *
  * Security:
  * - @UseGuards(JwtAuthGuard) on controller = all routes protected
  * - @CurrentUser() extracts userId from JWT (never trust client-provided userId)
@@ -53,19 +51,19 @@ export class ConsultationController {
 
   /**
    * POST /consultation
-   * 
+   *
    * Create new consultation session.
    * Use case: User starts onboarding flow in mobile app.
-   * 
+   *
    * Request body: { answers?: ConsultationAnswerDto[] } (optional - can start empty)
    * Returns: Full consultation session with any provided answers
-   * 
+   *
    * Flow:
    * 1. Mobile calls this when user enters onboarding
    * 2. Backend creates session record (status: pending)
    * 3. Client can immediately submit answers or do it incrementally
    */
-  
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createConsultation(
@@ -77,12 +75,12 @@ export class ConsultationController {
 
   /**
    * GET /consultation/:id
-   * 
+   *
    * Fetch consultation session with all answers and question details.
    * Use case: User returns to incomplete consultation, or reviews completed one.
-   * 
+   *
    * Security: Service verifies session belongs to authenticated user
-   * 
+   *
    * Response includes:
    * - Session status (pending/completed)
    * - All submitted answers with embedded question details
@@ -98,14 +96,14 @@ export class ConsultationController {
 
   /**
    * GET /consultation
-   * 
+   *
    * Get user's most recent consultation session.
    * Use case: Check if user has completed onboarding.
-   * 
+   *
    * Returns:
    * - Most recent session (by createdAt DESC)
    * - Null if no sessions exist
-   * 
+   *
    * Client logic:
    * - If null or status=pending → show onboarding
    * - If status=completed → proceed to main app
@@ -119,18 +117,18 @@ export class ConsultationController {
 
   /**
    * PATCH /consultation/:id
-   * 
+   *
    * Update consultation answers (partial update supported).
    * Use case: User goes back and changes previous answers.
-   * 
+   *
    * Request body: { answers: ConsultationAnswerDto[] }
    * - Only send changed answers, not entire consultation
    * - Service upserts: inserts new answers, updates existing by questionId
-   * 
+   *
    * Validation:
    * - Cannot update completed consultation (throws 400)
    * - Must own the session (throws 403)
-   * 
+   *
    * Returns: Updated consultation session
    */
   @Patch(':id')
@@ -144,15 +142,15 @@ export class ConsultationController {
 
   /**
    * POST /consultation/:id/submit-answer
-   * 
+   *
    * Submit single answer (real-time progress saving).
    * Use case: Mobile saves each answer as user completes it.
-   * 
+   *
    * Alternative to PATCH (which accepts array):
    * - This is more semantic for "add one answer"
    * - Better for tracking individual answer submission events
    * - Can emit analytics per question completion
-   * 
+   *
    * Request body: { questionId: string, value: unknown }
    * Returns: Updated consultation session
    */
@@ -167,21 +165,21 @@ export class ConsultationController {
 
   /**
    * POST /consultation/:id/complete
-   * 
+   *
    * Mark consultation as completed.
    * Use case: User finishes all required questions and submits.
-   * 
+   *
    * Validation (in service):
    * - All required questions must be answered
    * - Session must be in 'pending' status
-   * 
+   *
    * Side effects:
    * - Sets status = 'completed', completedAt = now()
    * - Triggers AI plan generation (queued job)
    * - May send notification "Your plan is being generated"
-   * 
+   *
    * Returns: Completed consultation session
-   * 
+   *
    * Client next step: Poll for generated workout plan or wait for push notification
    */
   @Post(':id/complete')
@@ -196,15 +194,15 @@ export class ConsultationController {
 
   /**
    * GET /consultation/questions/all
-   * 
+   *
    * Get all active consultation questions.
    * Use case: Mobile fetches question templates to render onboarding UI.
-   * 
+   *
    * Returns: Array of questions with:
    * - Question code, prompt, helpText
    * - Type (single/multi/scale/etc.)
    * - Options for enum/multi questions
-   * 
+   *
    * Note: This is static data (rarely changes).
    * Consider caching with long TTL (1 hour+) in Redis.
    */

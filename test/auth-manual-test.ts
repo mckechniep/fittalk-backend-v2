@@ -16,10 +16,12 @@ async function testAuth() {
   try {
     // Try to sign up (will fail if user exists, that's ok)
     console.log('1️⃣ Attempting to create test user...');
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email: testEmail,
-      password: testPassword,
-    });
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp(
+      {
+        email: testEmail,
+        password: testPassword,
+      },
+    );
 
     if (signUpError && !signUpError.message.includes('already registered')) {
       throw signUpError;
@@ -33,16 +35,20 @@ async function testAuth() {
 
     // Sign in to get JWT
     console.log('\n2️⃣ Signing in to get JWT token...');
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: testEmail,
-      password: testPassword,
-    });
+    const { data: signInData, error: signInError } =
+      await supabase.auth.signInWithPassword({
+        email: testEmail,
+        password: testPassword,
+      });
 
     if (signInError) throw signInError;
 
     const accessToken = signInData.session?.access_token;
     console.log('✅ JWT Token obtained');
-    console.log('Token (first 50 chars):', accessToken?.substring(0, 50) + '...');
+    console.log(
+      'Token (first 50 chars):',
+      accessToken?.substring(0, 50) + '...',
+    );
     console.log('\n📋 Copy this token for curl tests:\n');
     console.log(accessToken);
     console.log('\n');

@@ -21,24 +21,24 @@ import {
 
 /**
  * Availability Controller
- * 
+ *
  * Manages user weekly availability windows for workout scheduling.
- * 
+ *
  * Design decisions:
  * - Separate from ConsultationController: Availability is independent resource
  * - Used beyond onboarding: Scheduler queries this, users update anytime
  * - RESTful: /availability routes (not nested under /consultation)
  * - Simple CRUD: Create/replace all, read, delete individual
- * 
+ *
  * Routes:
  * - POST /availability - Upsert all windows (replace strategy)
  * - GET /availability - Get user's windows
  * - DELETE /availability/:id - Delete single window
- * 
+ *
  * Security:
  * - All routes require JWT authentication
  * - Users can only manage their own availability
- * 
+ *
  * Use cases:
  * - Onboarding: User sets initial weekly schedule
  * - Schedule update: User changes work hours, adds/removes time blocks
@@ -52,26 +52,26 @@ export class AvailabilityController {
 
   /**
    * POST /availability
-   * 
+   *
    * Create or replace all availability windows.
-   * 
+   *
    * Strategy: "Replace all" - atomic delete + insert
    * - Simplifies client logic (send full state)
    * - No partial update bugs
    * - Transactional (all-or-nothing)
-   * 
+   *
    * Request body: { windows: AvailabilityWindowDto[] }
    * - Empty array = clear all availability
    * - Windows validated for overlaps and time ranges
-   * 
+   *
    * Validation (service layer):
    * - No overlapping windows on same day
    * - startMin < endMin for each window
    * - Valid day range (0-6) and time range (0-1439)
-   * 
+   *
    * Returns: Created windows with database IDs
    * Status: 201 Created
-   * 
+   *
    * Example:
    * POST /availability
    * {
@@ -92,24 +92,24 @@ export class AvailabilityController {
 
   /**
    * GET /availability
-   * 
+   *
    * Get user's current availability windows.
-   * 
+   *
    * Returns: Array ordered by day (Sun-Sat), then start time
    * Empty array if no availability set
-   * 
+   *
    * Use cases:
    * - Display weekly schedule in settings
    * - Check if user has availability before scheduling
    * - Workout scheduler queries for placement
    * - Onboarding review: "Is this schedule correct?"
-   * 
+   *
    * Response includes:
    * - Window IDs (for individual deletion)
    * - Day, start/end times (in minutes)
    * - Priority (for scheduler optimization)
    * - Timestamps (audit trail)
-   * 
+   *
    * Example response:
    * [
    *   {
@@ -133,26 +133,26 @@ export class AvailabilityController {
 
   /**
    * DELETE /availability/:id
-   * 
+   *
    * Delete single availability window.
-   * 
+   *
    * Use case: Remove one time block without re-sending full schedule
    * Example: "I can't do Tuesday mornings anymore, but rest stays same"
-   * 
+   *
    * Alternative to POST (which replaces all):
    * - More granular editing
    * - Less bandwidth for small changes
    * - Better UX for mobile quick-edit
-   * 
+   *
    * Security:
    * - Verifies window belongs to authenticated user
    * - Returns 403 if attempting to delete another user's window
-   * 
+   *
    * Returns: 204 No Content (success, empty body)
    * Throws:
    * - 404 if window not found
    * - 403 if window belongs to different user
-   * 
+   *
    * Example:
    * DELETE /availability/uuid-123
    * → 204 No Content

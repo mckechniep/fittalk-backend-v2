@@ -1,19 +1,24 @@
 // dtos/create-consultation.dto.ts
-import { IsOptional, IsArray, ValidateNested, IsString, IsNotEmpty } from 'class-validator'
-import { Type } from 'class-transformer'
+import {
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsString,
+  IsNotEmpty,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 /**
  * Creates a new consultation session.
  * No answers required upfront - allows starting session and saving progress incrementally.
  * This supports mobile UX where users answer questions one-by-one or in batches.
  */
-export class CreateConsultationDto { 
-    @IsOptional()
-    @IsArray()
-    @ValidateNested( { each: true} )
-    @Type(() => ConsultationAnswerDto)
-    answers?: ConsultationAnswerDto[]
-
+export class CreateConsultationDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConsultationAnswerDto)
+  answers?: ConsultationAnswerDto[];
 }
 
 /**
