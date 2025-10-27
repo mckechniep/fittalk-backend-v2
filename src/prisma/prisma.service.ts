@@ -3,7 +3,10 @@ import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor(private configService: ConfigService) {
     super({
       datasources: {
@@ -11,9 +14,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           url: configService.get<string>('database.url'),
         },
       },
-      log: configService.get<string>('app.nodeEnv') === 'development' 
-        ? ['query', 'error', 'warn'] 
-        : ['error'],
+      log:
+        configService.get<string>('app.nodeEnv') === 'development'
+          ? ['query', 'error', 'warn']
+          : ['error'],
     });
   }
 
@@ -28,10 +32,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   /**
    * Utility method to exclude fields from Prisma results
    */
-  exclude<T, Key extends keyof T>(
-    data: T,
-    keys: Key[],
-  ): Omit<T, Key> {
+  exclude<T, Key extends keyof T>(data: T, keys: Key[]): Omit<T, Key> {
     for (const key of keys) {
       delete data[key];
     }
@@ -56,7 +57,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     for (const { tablename } of tableNames) {
       if (tablename !== '_prisma_migrations') {
         try {
-          transactions.push(this.$executeRawUnsafe(`TRUNCATE TABLE "public"."${tablename}" CASCADE;`));
+          transactions.push(
+            this.$executeRawUnsafe(
+              `TRUNCATE TABLE "public"."${tablename}" CASCADE;`,
+            ),
+          );
         } catch (error) {
           console.log({ error });
         }

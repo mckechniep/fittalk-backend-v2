@@ -2,41 +2,44 @@
  * ============================================================================
  * AUTH E2E TESTING STRATEGY
  * ============================================================================
- * 
+ *
  * This file contains AUTOMATED end-to-end tests for the Auth module.
  * These tests are meant to run in CI/CD pipelines and during development.
- * 
+ *
  * WHEN TO USE EACH TESTING APPROACH:
- * 
+ *
  * 1. **auth.e2e-spec.ts** (THIS FILE) - Automated Jest Tests
  *    - Purpose: Automated testing for CI/CD
  *    - Run with: `pnpm test:e2e`
  *    - Best for: Regression testing, PR checks, automated validation
  *    - Requires: TEST_USER_EMAIL and TEST_USER_PASSWORD in .env.test
- * 
+ *
  * 2. **test/auth-manual-test.ts** - JWT Token Generator
  *    - Purpose: Generate a real Supabase JWT for manual testing
  *    - Run with: `pnpm test:auth`
  *    - Best for: Getting a token to use in curl/Postman
- * 
+ *
  * 3. **test/test-all-endpoints.sh** - Manual Integration Testing
  *    - Purpose: Quick manual testing of all endpoints with real requests
  *    - Run with: `./test/test-all-endpoints.sh`
  *    - Best for: Manual QA, exploring API responses, debugging
  *    - Requires: JWT_TOKEN environment variable
- * 
+ *
  * SETUP INSTRUCTIONS:
  * - Create a test user in Supabase for your test database
  * - Add to .env.test:
  *   TEST_USER_EMAIL=test@fittalk.com
  *   TEST_USER_PASSWORD=TestPassword123!
- * 
+ *
  * ============================================================================
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { AppModule } from '../src/app.module';
 import { getTestJWT } from './test-utils';
 
@@ -54,8 +57,12 @@ describe('AuthController (e2e)', () => {
         testJWT = await getTestJWT(testEmail, testPassword);
         console.log('✅ Test JWT obtained for authenticated tests');
       } catch (error) {
-        console.warn('⚠️  Could not get test JWT - authenticated tests will be skipped');
-        console.warn('   Set TEST_USER_EMAIL and TEST_USER_PASSWORD in .env.test');
+        console.warn(
+          '⚠️  Could not get test JWT - authenticated tests will be skipped',
+        );
+        console.warn(
+          '   Set TEST_USER_EMAIL and TEST_USER_PASSWORD in .env.test',
+        );
       }
     }
   });

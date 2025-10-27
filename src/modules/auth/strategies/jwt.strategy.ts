@@ -66,15 +66,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     console.log('🔑 JWT Validation started for user:', payload.sub);
-  
+
     if (payload.exp && Date.now() >= payload.exp * 1000) {
       console.error('❌ Token expired');
       throw new UnauthorizedException('Token expired');
     }
-  
+
     const sessionId = payload.session_id;
-    const sessionTrackingEnabled = this.configService.get<boolean>('app.trackSessions', true);
-  
+    const sessionTrackingEnabled = this.configService.get<boolean>(
+      'app.trackSessions',
+      true,
+    );
+
     // FIRST: Check if user exists, create if not
     let user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
@@ -83,7 +86,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         preferences: true,
       },
     });
-  
+
     if (!user) {
       console.log('  👤 Creating new user');
       user = await this.prisma.user.create({
@@ -111,13 +114,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     } else {
       console.log('  ✅ Existing user found:', user.email);
     }
-  
+
     // THEN: Handle session (now user definitely exists)
     if (sessionId && sessionTrackingEnabled) {
       const session = await this.prisma.session.findUnique({
         where: { jwtId: sessionId },
       });
-  
+
       if (!session) {
         console.log('  📝 Creating new session');
         await this.prisma.session.create({
@@ -133,9 +136,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         console.log('  ✅ Session valid');
       }
     }
-  
+
     console.log('✅ JWT validation successful');
-  
+
     return {
       id: user.id,
       email: user.email,
