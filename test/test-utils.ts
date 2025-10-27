@@ -4,7 +4,10 @@ import { createClient } from '@supabase/supabase-js';
  * Utility to generate test JWT tokens using Supabase
  * Only use in development/test environment
  */
-export async function getTestJWT(email: string, password: string): Promise<string> {
+export async function getTestJWT(
+  email: string,
+  password: string,
+): Promise<string> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 

@@ -14,7 +14,12 @@ const core_1 = require("@nestjs/core");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
+const redis_module_1 = require("./common/redis/redis.module");
 const auth_module_1 = require("./modules/auth/auth.module");
+const goals_module_1 = require("./modules/goals/goals.module");
+const programs_module_1 = require("./modules/programs/programs.module");
+const consultation_module_1 = require("./modules/consultation/consultation.module");
+const workouts_module_1 = require("./modules/workouts/workouts.module");
 const jwt_auth_guard_1 = require("./common/guards/jwt-auth.guard");
 const config_2 = require("./config");
 let AppModule = class AppModule {
@@ -33,7 +38,12 @@ exports.AppModule = AppModule = __decorate([
                     limit: 10,
                 }]),
             prisma_module_1.PrismaModule,
+            redis_module_1.RedisModule,
             auth_module_1.AuthModule,
+            consultation_module_1.ConsultationModule,
+            workouts_module_1.WorkoutsModule,
+            goals_module_1.GoalsModule,
+            programs_module_1.ProgramsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [
