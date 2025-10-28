@@ -156,6 +156,8 @@ export class AuthService {
     return { message: 'All other sessions revoked successfully' };
   }
 
+  // ==================== DEVICE MANAGEMENT ====================
+
   /**
    * Register or update a device for push notifications
    */
@@ -181,5 +183,121 @@ export class AuthService {
     });
 
     return device;
+  }
+
+  /**
+   * Get all user's devices
+   */
+  async getUserDevices(userId: string) {
+    return this.prisma.device.findMany({
+      where: { userId },
+      orderBy: { lastSeenAt: 'desc' },
+      select: {
+        id: true,
+        platform: true,
+        deviceId: true,
+        pushToken: true,
+        lastSeenAt: true,
+        revokedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * Update device push token
+   */
+  async updateDeviceToken(
+    userId: string,
+    deviceId: string,
+    dto: { pushToken?: string },
+  ) {
+    // Verify ownership
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+
+    if (!device || device.userId !== userId) {
+      throw new NotFoundException('Device not found');
+    }
+
+    // Update token and mark as active
+    return this.prisma.device.update({
+      where: { deviceId },
+      data: {
+        pushToken: dto.pushToken,
+        lastSeenAt: new Date(),
+        revokedAt: null, // Re-activate if previously revoked
+      },
+    });
+  }
+
+  /**
+   * Revoke/delete a device
+   */
+  async revokeDevice(userId: string, deviceId: string) {
+    // Verify ownership
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+
+    if (!device || device.userId !== userId) {
+      throw new NotFoundException('Device not found');
+    }
+
+    // Soft delete
+    await this.prisma.device.update({
+      where: { deviceId },
+      data: { revokedAt: new Date() },
+    });
+
+    return { message: 'Device revoked successfully' };
+  }
+
+  /**
+   * Verify device exists and is not revoked
+   */
+  async verifyDevice(userId: string, deviceId: string) {
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+
+    // Device not found
+    if (!device) {
+      return {
+        valid: false,
+        reason: 'Device not found',
+      };
+    }
+
+    // Device belongs to different user
+    if (device.userId !== userId) {
+      return {
+        valid: false,
+        reason: 'Device does not belong to user',
+      };
+    }
+
+    // Device is revoked
+    if (device.revokedAt) {
+      return {
+        valid: false,
+        reason: 'Device has been revoked',
+        revokedAt: device.revokedAt,
+      };
+    }
+
+    // Device is valid
+    return {
+      valid: true,
+      device: {
+        id: device.id,
+        platform: device.platform,
+        deviceId: device.deviceId,
+        lastSeenAt: device.lastSeenAt,
+        createdAt: device.createdAt,
+      },
+    };
   }
 }

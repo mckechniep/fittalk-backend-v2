@@ -165,9 +165,6 @@ importers:
       prisma:
         specifier: ^6.17.0
         version: 6.17.0(typescript@5.9.3)
-      socket.io-client:
-        specifier: ^4.8.1
-        version: 4.8.1
       source-map-support:
         specifier: ^0.5.21
         version: 0.5.21
