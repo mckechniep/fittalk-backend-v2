@@ -281,12 +281,6 @@ export class PlannerService {
     window: PreparedWindow,
     occupiedSlots: OccupiedSlot[],
   ): ScheduledAssignment | null {
-    // ✅ NEW: Check if workout day matches window day
-    const workoutDayOfWeek = day.dayNumber % 7; // Convert 1-7 to 0-6
-    if (window.dayOfWeek !== workoutDayOfWeek) {
-      return null; // Wrong day of week
-    }
-
     const durationMin = day.estimatedDurationMin;
 
     // Check if workout fits in this window
@@ -463,14 +457,11 @@ export class PlannerService {
     windows: PreparedWindow[],
     occupiedSlots: OccupiedSlot[],
   ): string {
-    // ✅ Convert dayNumber (1-7) to dayOfWeek (0-6)
-    const dayOfWeek = day.dayNumber % 7;
-
     // Check if any windows on this day of week
-    const dayWindows = windows.filter((w) => w.dayOfWeek === dayOfWeek);
+    const dayWindows = windows.filter((w) => w.dayOfWeek === day.dayNumber - 1);
 
     if (dayWindows.length === 0) {
-      return `No availability set for ${this.getDayName(dayOfWeek)}`;
+      return `No availability set for ${this.getDayName(day.dayNumber - 1)}`;
     }
 
     // Check if workout is too long for any window
@@ -478,7 +469,7 @@ export class PlannerService {
       ...dayWindows.map((w) => w.endMin - w.startMin),
     );
     if (durationMin > longestWindow) {
-      return `Workout duration (${durationMin} min) exceeds largest available window (${longestWindow} min) on ${this.getDayName(dayOfWeek)}`;
+      return `Workout duration (${durationMin} min) exceeds largest available window (${longestWindow} min) on ${this.getDayName(day.dayNumber - 1)}`;
     }
 
     // Check if all windows are occupied
@@ -492,11 +483,11 @@ export class PlannerService {
     });
 
     if (allOccupied) {
-      return `All available time slots on ${this.getDayName(dayOfWeek)} are already occupied`;
+      return `All available time slots on ${this.getDayName(day.dayNumber - 1)} are already occupied`;
     }
 
     // Generic fallback
-    return `Unable to find suitable time slot on ${this.getDayName(dayOfWeek)}`;
+    return `Unable to find suitable time slot on ${this.getDayName(day.dayNumber - 1)}`;
   }
 
   /**

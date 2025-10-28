@@ -7,8 +7,6 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { GoalsModule } from './modules/goals/goals.module';
-import { ProgramsModule } from './modules/programs/programs.module';
 import { ConsultationModule } from './modules/consultation/consultation.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -29,21 +27,21 @@ import {
     }),
 
     // Rate limiting
-    ThrottlerModule.forRoot([{
-      ttl: 60000, // 60 seconds
-      limit: 10,  // 10 requests per minute
-    }]),
-    
-    // Core modules
-    PrismaModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 seconds
+        limit: 10, // 10 requests per minute
+      },
+    ]),
+
+    // Infrastructure modules (@Global - available everywhere)
+    PrismaModule, // Database access
     RedisModule, // Distributed locks, caching, WebSocket adapter
-    
-    // Feature Modules
-    AuthModule,
+
+    // Feature modules
+    AuthModule, // Authentication, user management
     ConsultationModule, // Onboarding, availability
     WorkoutsModule, // Scheduling, live sessions (Phase 1: scheduling only)
-    GoalsModule,
-    ProgramsModule,
   ],
   controllers: [AppController],
   providers: [
