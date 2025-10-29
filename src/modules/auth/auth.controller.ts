@@ -15,10 +15,10 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
-import { CreateProfileDto } from './dto/create-profile.dto';
-import { UpdateProfileDto } from './dto/update-profile.dto';
-import { RegisterDeviceDto } from './dto/register-device.dto';
-import { UpdateDeviceTokenDto } from './dto/update-device-token.dto';
+import { CreateProfileDto } from './dtos/create-profile.dto';
+import { UpdateProfileDto } from './dtos/update-profile.dto';
+import { RegisterDeviceDto } from './dtos/register-device.dto';
+import { UpdateDeviceTokenDto } from './dtos/update-device-token.dto';
 
 @Controller('auth')
 @UseGuards(JwtAuthGuard)
