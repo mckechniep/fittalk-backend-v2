@@ -40,7 +40,7 @@ import {
 export class ConsultationService {
   private readonly logger = new Logger(ConsultationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // ==================== CONSULTATION SESSION METHODS ====================
 
@@ -544,8 +544,8 @@ export class ConsultationService {
         if (a.startMin < b.endMin && b.startMin < a.endMin) {
           throw new BadRequestException(
             `Overlapping availability windows on day ${this.getDayName(a.dayOfWeek)}: ` +
-              `${this.formatMinutes(a.startMin)}-${this.formatMinutes(a.endMin)} overlaps ` +
-              `${this.formatMinutes(b.startMin)}-${this.formatMinutes(b.endMin)}`,
+            `${this.formatMinutes(a.startMin)}-${this.formatMinutes(a.endMin)} overlaps ` +
+            `${this.formatMinutes(b.startMin)}-${this.formatMinutes(b.endMin)}`,
           );
         }
       }
