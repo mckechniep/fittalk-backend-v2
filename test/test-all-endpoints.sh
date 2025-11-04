@@ -52,3 +52,7 @@ curl -s -X GET "$BASE/api/v1/workouts/schedule/week?weekStart=2025-01-20" \
 echo -e "\n8. Get Upcoming Workout"
 curl -s -X GET "$BASE/api/v1/workouts/schedule/upcoming" \
   -H "Authorization: Bearer $JWT_TOKEN" | jq
+
+echo -e "\n9. Get Workout Log"
+curl -s -X GET "$BASE/api/v1/workout-logging/1" \
+  -H "Authorization: Bearer $JWT_TOKEN" | jq
