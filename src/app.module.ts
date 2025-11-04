@@ -10,6 +10,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ConsultationModule } from './modules/consultation/consultation.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLoggingModule } from './modules/workout-logging/workout-logging.module';
+import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
   appConfig,
@@ -44,6 +45,7 @@ import {
     ConsultationModule, // Onboarding, availability
     WorkoutsModule, // Scheduling, live sessions (Phase 1: scheduling only)
     WorkoutLoggingModule, // Workout logging and performance tracking
+    NutritionModule, // Nutrition tracking, meal logging, grocery lists
   ],
   controllers: [AppController],
   providers: [

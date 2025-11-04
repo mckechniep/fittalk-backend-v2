@@ -289,11 +289,13 @@ model MacroTarget {
   fatsG     Int?
   startsOn  DateTime  @default(now())
   endsOn    DateTime?
+  deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, startsOn])
+  @@index([deletedAt])
 }
 
 model FoodItem {
@@ -307,11 +309,13 @@ model FoodItem {
   fatsG        Decimal       @db.Decimal(6, 2)
   tags         String[]      @default([])
   source       String?
+  deletedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   groceryItems GroceryItem[]
 
   @@index([name])
+  @@index([deletedAt])
 }
 
 model GroceryList {
@@ -319,12 +323,14 @@ model GroceryList {
   userId    String
   title     String        @default("Weekly Grocery List")
   weekOf    DateTime
+  deletedAt DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   items     GroceryItem[]
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, weekOf])
+  @@index([deletedAt])
 }
 
 model GroceryItem {
