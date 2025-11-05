@@ -16,6 +16,7 @@ import {
 import { WorkoutLoggingService } from './workout-logging.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AuditEntity } from '../../common/decorators/audit-entity.decorator';
 import { CreateWorkoutLogDto } from './dtos/create-workout-logging.dto';
 import { UpdateWorkoutLogDto } from './dtos/update-workout-logging.dto';
 import {
@@ -128,6 +129,7 @@ export class WorkoutLoggingController {
      * }
      */
     @Post()
+    @AuditEntity('WorkoutLog')
     @HttpCode(HttpStatus.CREATED)
     async createWorkoutLog(
         @CurrentUser('id') userId: string,
@@ -264,6 +266,7 @@ export class WorkoutLoggingController {
      * - 400 if setNumber invalid
      */
     @Patch(':id')
+    @AuditEntity('WorkoutLog')
     async updateWorkoutLog(
         @CurrentUser('id') userId: string,
         @Param('id', ParseUUIDPipe) logId: string,
@@ -300,6 +303,7 @@ export class WorkoutLoggingController {
      * → 204 No Content
      */
     @Delete(':id')
+    @AuditEntity('WorkoutLog')
     @HttpCode(HttpStatus.NO_CONTENT)
     async deleteWorkoutLog(
         @CurrentUser('id') userId: string,

@@ -6,9 +6,11 @@ import {
     CallHandler,
     Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AUDIT_ENTITY_KEY } from '../decorators/audit-entity.decorator';
 
 /**
  * Audit Logging Interceptor
@@ -28,7 +30,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class AuditLoggingInterceptor implements NestInterceptor {
     private readonly logger = new Logger(AuditLoggingInterceptor.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly reflector: Reflector
+    ) { }
 
     intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
         const request = context.switchToHttp().getRequest();
@@ -45,13 +50,20 @@ export class AuditLoggingInterceptor implements NestInterceptor {
         const ip = request.ip || request.connection?.remoteAddress;
         const userAgent = request.headers['user-agent'];
 
+        // Extract entity type from metadata (route handler, then controller)
+        const entityType = this.reflector.getAllAndOverride<string>(AUDIT_ENTITY_KEY, [
+            context.getHandler(), // Route handler decorator takes precedence
+            context.getClass(),   // Fall back to controller decorator
+        ]);
+
         return next.handle().pipe(
             tap({
                 next: async (response) => {
                     try {
-                        // Determine entity type from route
-                        const entityType = this.extractEntityType(route);
-                        if (!entityType) return;
+                        // Skip audit logging if no entity type is defined
+                        if (!entityType) {
+                            return;
+                        }
 
                         // Determine action
                         const action = this.mapMethodToAction(method);
@@ -88,18 +100,6 @@ export class AuditLoggingInterceptor implements NestInterceptor {
                 },
             })
         );
-    }
-
-    /**
-     * Extract entity type from route path
-     */
-    private extractEntityType(route: string): string | null {
-        if (route.includes('/nutrition/foods')) return 'FoodItem';
-        if (route.includes('/nutrition/meals')) return 'MealLog';
-        if (route.includes('/nutrition/targets')) return 'MacroTarget';
-        if (route.includes('/nutrition/grocery-lists')) return 'GroceryList';
-        if (route.includes('/workout-logging')) return 'WorkoutLog';
-        return null;
     }
 
     /**

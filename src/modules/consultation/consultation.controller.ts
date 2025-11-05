@@ -16,6 +16,7 @@ import {
 import { ConsultationService } from './consultation.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { AuditEntity } from '../../common/decorators/audit-entity.decorator';
 import {
   CreateConsultationDto,
   ConsultationAnswerDto,
@@ -65,6 +66,7 @@ export class ConsultationController {
    */
 
   @Post()
+  @AuditEntity('ConsultationSession')
   @HttpCode(HttpStatus.CREATED)
   async createConsultation(
     @CurrentUser('id') userId: string,
@@ -132,6 +134,7 @@ export class ConsultationController {
    * Returns: Updated consultation session
    */
   @Patch(':id')
+  @AuditEntity('ConsultationSession')
   async updateConsultation(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -155,6 +158,7 @@ export class ConsultationController {
    * Returns: Updated consultation session
    */
   @Post(':id/submit-answer')
+  @AuditEntity('ConsultationAnswer')
   async submitSingleAnswer(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -183,6 +187,7 @@ export class ConsultationController {
    * Client next step: Poll for generated workout plan or wait for push notification
    */
   @Post(':id/complete')
+  @AuditEntity('ConsultationSession')
   async completeConsultation(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,

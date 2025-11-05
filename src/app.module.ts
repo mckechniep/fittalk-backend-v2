@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { CommonServicesModule } from './common/services/common-services.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConsultationModule } from './modules/consultation/consultation.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
@@ -17,6 +18,9 @@ import {
   supabaseConfig,
   databaseConfig,
   redisConfig,
+  cacheConfig,
+  transactionConfig,
+  throttleConfig,
 } from './config';
 
 @Module({
@@ -25,7 +29,15 @@ import {
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      load: [appConfig, supabaseConfig, databaseConfig, redisConfig],
+      load: [
+        appConfig,
+        supabaseConfig,
+        databaseConfig,
+        redisConfig,
+        cacheConfig,
+        transactionConfig,
+        throttleConfig,
+      ],
     }),
 
     // Rate limiting
@@ -39,6 +51,7 @@ import {
     // Infrastructure modules (@Global - available everywhere)
     PrismaModule, // Database access
     RedisModule, // Distributed locks, caching, WebSocket adapter
+    CommonServicesModule, // Shared services (OwnershipValidator, etc.)
 
     // Feature modules
     AuthModule, // Authentication, user management

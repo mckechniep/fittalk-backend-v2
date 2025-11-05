@@ -2,6 +2,9 @@
 import { Module } from '@nestjs/common';
 import { NutritionController } from './nutrition.controller';
 import { NutritionService } from './nutrition.service';
+import { FoodItemService } from './services/food-item.service';
+import { MacroTargetService } from './services/macro-target.service';
+import { GroceryListService } from './services/grocery-list.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 
 /**
@@ -19,8 +22,11 @@ import { PrismaModule } from '../../prisma/prisma.module';
  * Controller:
  * - NutritionController: /nutrition routes (food items, meal logs, macro targets, grocery lists)
  *
- * Service:
- * - NutritionService: Business logic, validation, database access
+ * Services:
+ * - FoodItemService: Food item CRUD, caching, validation
+ * - MacroTargetService: Macro target management, ownership validation
+ * - GroceryListService: Grocery list CRUD, transaction handling
+ * - NutritionService: Meal logging (future implementation)
  *
  * Dependencies:
  * - PrismaModule: Database access (@Global, provides PrismaService)
@@ -34,7 +40,8 @@ import { PrismaModule } from '../../prisma/prisma.module';
  *
  * Design decisions:
  * - Single controller: All nutrition operations in one place
- * - Service exported: Other modules need nutrition data
+ * - Services exported: Other modules need nutrition data
+ * - Split services: Single Responsibility Principle (each service handles one domain)
  * - Combines food items, meal logging, and grocery lists in one module
  * - Uses PrismaModule: Global database access
  *
@@ -59,10 +66,16 @@ import { PrismaModule } from '../../prisma/prisma.module';
         NutritionController, // /nutrition routes
     ],
     providers: [
-        NutritionService, // Business logic
+        FoodItemService,      // Food item CRUD
+        MacroTargetService,   // Macro target management
+        GroceryListService,   // Grocery list management
+        NutritionService,     // Meal logging (future)
     ],
     exports: [
-        NutritionService, // Available to AI, Analytics, Goals, Profile modules
+        FoodItemService,      // Exported for AI meal recommendations
+        MacroTargetService,   // Exported for Goals and Analytics modules
+        GroceryListService,   // Exported for meal planning features
+        NutritionService,     // Exported for cross-module nutrition data
     ],
 })
 export class NutritionModule { }

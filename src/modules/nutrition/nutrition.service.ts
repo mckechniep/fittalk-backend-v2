@@ -5,9 +5,12 @@ import {
     InternalServerErrorException,
     Inject,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { OwnershipValidator } from '../../common/services/ownership-validator.service';
+import { ValidationService } from '../../common/services/validation.service';
 import { FoodItem, GroceryList, MacroTarget } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { CreateFoodItemDto } from './dtos/create-food-item.dto';
@@ -56,7 +59,10 @@ export class NutritionService {
 
     constructor(
         private readonly prisma: PrismaService,
-        @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
+        private readonly configService: ConfigService,
+        @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+        private readonly ownershipValidator: OwnershipValidator,
+        private readonly validationService: ValidationService
     ) { }
 
     // ==================== FOOD ITEMS ====================
@@ -417,14 +423,15 @@ export class NutritionService {
                 },
             });
 
-            if (!macroTarget) {
-                throw new MacroTargetNotFoundException(id);
-            }
-
-            if (macroTarget.userId !== userId) {
-                this.logger.warn(`User ${userId} attempted to update macro target ${id} owned by ${macroTarget.userId}`);
-                throw new MacroTargetNotOwnedException(id, userId);
-            }
+            // Validate ownership using centralized validator
+            this.ownershipValidator.validateOwnershipWithCustomExceptions(
+                macroTarget,
+                userId,
+                'MacroTarget',
+                id,
+                new MacroTargetNotFoundException(id),
+                new MacroTargetNotOwnedException(id, userId)
+            );
 
             this.logger.log(`Updating macro target ${id}`);
 
@@ -463,14 +470,15 @@ export class NutritionService {
                 },
             });
 
-            if (!macroTarget) {
-                throw new MacroTargetNotFoundException(id);
-            }
-
-            if (macroTarget.userId !== userId) {
-                this.logger.warn(`User ${userId} attempted to delete macro target ${id} owned by ${macroTarget.userId}`);
-                throw new MacroTargetNotOwnedException(id, userId);
-            }
+            // Validate ownership using centralized validator
+            this.ownershipValidator.validateOwnershipWithCustomExceptions(
+                macroTarget,
+                userId,
+                'MacroTarget',
+                id,
+                new MacroTargetNotFoundException(id),
+                new MacroTargetNotOwnedException(id, userId)
+            );
 
             this.logger.log(`Soft deleting macro target ${id}`);
 
@@ -590,17 +598,17 @@ export class NutritionService {
                 },
             }) as PrismaGroceryList | null;
 
-            if (!groceryList) {
-                this.logger.warn(`Grocery list ${id} not found`);
-                throw new GroceryListNotFoundException(id);
-            }
+            // Validate ownership using centralized validator (returns guaranteed non-null entity)
+            const validatedList = this.ownershipValidator.validateOwnershipWithCustomExceptions(
+                groceryList,
+                userId,
+                'GroceryList',
+                id,
+                new GroceryListNotFoundException(id),
+                new GroceryListNotOwnedException(id, userId)
+            );
 
-            if (groceryList.userId !== userId) {
-                this.logger.warn(`User ${userId} attempted to access grocery list ${id} owned by ${groceryList.userId}`);
-                throw new GroceryListNotOwnedException(id, userId);
-            }
-
-            return this.toGroceryListDto(groceryList);
+            return this.toGroceryListDto(validatedList);
         } catch (error) {
             if (error instanceof GroceryListNotFoundException || error instanceof GroceryListNotOwnedException) {
                 throw error;
@@ -629,7 +637,14 @@ export class NutritionService {
 
             this.logger.log(`Updating grocery list ${id}`);
 
-            // Use transaction for atomic updates
+            // Get transaction configuration
+            const txConfig = this.configService.get('transaction.default') || {
+                maxWait: 2000,
+                timeout: 5000,
+                isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+            };
+
+            // Use transaction for atomic updates with proper error handling
             return await this.prisma.$transaction(async (tx) => {
                 // Update basic fields
                 const updateData: Prisma.GroceryListUpdateInput = {};
@@ -665,12 +680,45 @@ export class NutritionService {
                 });
 
                 return this.toGroceryListDto(updated);
-            });
+            }, txConfig);
         } catch (error) {
+            // Re-throw domain exceptions
             if (error instanceof GroceryListNotFoundException || error instanceof GroceryListNotOwnedException) {
                 throw error;
             }
 
+            // Handle Prisma-specific errors
+            if (error instanceof Prisma.PrismaClientKnownRequestError) {
+                this.logger.error(`Prisma error updating grocery list ${id}: ${error.code} - ${error.message}`, error.stack);
+
+                switch (error.code) {
+                    case 'P2002':
+                        // Unique constraint violation
+                        throw new InternalServerErrorException({
+                            message: 'A grocery list with this data already exists',
+                            error: 'GroceryListAlreadyExists',
+                        });
+                    case 'P2025':
+                        // Record not found during update
+                        throw new GroceryListNotFoundException(id);
+                    default:
+                        throw new InternalServerErrorException({
+                            message: 'Database operation failed',
+                            error: 'DatabaseError',
+                        });
+                }
+            }
+
+            // Handle transaction timeout errors
+            if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+                this.logger.error(`Transaction timeout updating grocery list ${id}: ${error.message}`, error.stack);
+                throw new InternalServerErrorException({
+                    message: 'Operation timed out. Please try again.',
+                    error: 'TransactionTimeout',
+                });
+            }
+
+            // Generic error handling
             this.logger.error(`Failed to update grocery list ${id}: ${error.message}`, error.stack);
             throw new InternalServerErrorException('Failed to update grocery list');
         }
@@ -776,6 +824,8 @@ export class NutritionService {
 
     /**
      * Validate nutrition data consistency
+     *
+     * Delegates to centralized ValidationService for consistent validation logic
      */
     private validateNutritionData(data: {
         calories: number;
@@ -783,27 +833,8 @@ export class NutritionService {
         carbsG: number;
         fatsG: number;
     }): void {
-        // Calculate expected calories from macros
-        // Protein: 4 cal/g, Carbs: 4 cal/g, Fats: 9 cal/g
-        const calculatedCalories =
-            Number(data.proteinG) * 4 +
-            Number(data.carbsG) * 4 +
-            Number(data.fatsG) * 9;
-
-        // Allow 10% margin of error
-        const margin = data.calories * 0.1;
-        const difference = Math.abs(data.calories - calculatedCalories);
-
-        if (difference > margin) {
-            this.logger.warn(
-                `Nutrition data inconsistency: Declared ${data.calories} cal, ` +
-                `calculated ${calculatedCalories} cal (${difference} cal difference)`
-            );
-            throw new NutritionDataInconsistentException(
-                `Declared calories (${data.calories}) don't match calculated calories (${Math.round(calculatedCalories)}) from macros`,
-                { declared: data.calories, calculated: Math.round(calculatedCalories) }
-            );
-        }
+        // Use centralized validation service
+        this.validationService.validateNutritionData(data);
     }
 
     /**
@@ -811,8 +842,9 @@ export class NutritionService {
      */
     private async invalidateFoodCache(): Promise<void> {
         try {
-            // Clear all food-related cache keys
-            await this.cacheManager.del('food-items-all');
+            // Clear all food-related cache keys using centralized config
+            const cacheKey = this.configService.get<string>('cache.keys.foodItems') || 'food-items-all';
+            await this.cacheManager.del(cacheKey);
             // Could use pattern matching if cache manager supports it
             // await this.cacheManager.reset(); // Nuclear option
         } catch (error) {

@@ -24,9 +24,13 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { NutritionService } from './nutrition.service';
+import { FoodItemService } from './services/food-item.service';
+import { MacroTargetService } from './services/macro-target.service';
+import { GroceryListService } from './services/grocery-list.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CacheKey } from '../../common/decorators/cache-key.decorator';
+import { AuditEntity } from '../../common/decorators/audit-entity.decorator';
 import { TransformInterceptor } from '../../common/interceptors/transform.interceptor';
 import { AuditLoggingInterceptor } from '../../common/interceptors/audit-logging.interceptor';
 import { PerformanceInterceptor } from '../../common/interceptors/performance.interceptor';
@@ -71,11 +75,17 @@ import { MealLogResponseDto, PaginatedMealLogsResponseDto } from './dtos/meal-lo
 )
 @UsePipes(new SanitizationPipe())
 export class NutritionController {
-    constructor(private readonly nutritionService: NutritionService) { }
+    constructor(
+        private readonly nutritionService: NutritionService,
+        private readonly foodItemService: FoodItemService,
+        private readonly macroTargetService: MacroTargetService,
+        private readonly groceryListService: GroceryListService,
+    ) { }
 
     // ==================== FOOD ITEMS ====================
 
     @Post('foods')
+    @AuditEntity('FoodItem') // Enable audit logging for FoodItem entity
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
     @UseInterceptors(new TransformInterceptor(FoodItemResponseDto))
@@ -94,7 +104,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: CreateFoodItemDto,
     ): Promise<FoodItemResponseDto> {
-        return this.nutritionService.createFoodItem(userId, dto);
+        return this.foodItemService.createFoodItem(userId, dto);
     }
 
     @Get('foods')
@@ -116,7 +126,7 @@ export class NutritionController {
         @Query('search') search?: string,
         @Query('tags') tags?: string,
     ): Promise<FoodItemResponseDto[]> {
-        return this.nutritionService.getFoodItems(search, tags);
+        return this.foodItemService.getFoodItems(search, tags);
     }
 
     @Get('foods/:id')
@@ -135,7 +145,7 @@ export class NutritionController {
     })
     @ApiResponse({ status: 404, description: 'Food item not found' })
     async getFoodItem(@Param('id') id: string): Promise<FoodItemResponseDto> {
-        return this.nutritionService.getFoodItem(id);
+        return this.foodItemService.getFoodItem(id);
     }
 
     @Patch('foods/:id')
@@ -156,7 +166,7 @@ export class NutritionController {
         @Param('id') id: string,
         @Body() dto: UpdateFoodItemDto,
     ): Promise<FoodItemResponseDto> {
-        return this.nutritionService.updateFoodItem(id, dto);
+        return this.foodItemService.updateFoodItem(id, dto);
     }
 
     @Delete('foods/:id')
@@ -170,7 +180,7 @@ export class NutritionController {
     @ApiResponse({ status: 204, description: 'Food item deleted successfully' })
     @ApiResponse({ status: 404, description: 'Food item not found' })
     async deleteFoodItem(@Param('id') id: string): Promise<void> {
-        return this.nutritionService.deleteFoodItem(id);
+        return this.foodItemService.deleteFoodItem(id);
     }
 
     // ==================== MEAL LOGS ====================
@@ -303,7 +313,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: CreateMacroTargetDto,
     ): Promise<MacroTargetResponseDto> {
-        return this.nutritionService.createMacroTarget(userId, dto);
+        return this.macroTargetService.createMacroTarget(userId, dto);
     }
 
     @Get('targets/current')
@@ -323,7 +333,7 @@ export class NutritionController {
     async getCurrentMacroTarget(
         @CurrentUser('id') userId: string
     ): Promise<MacroTargetResponseDto> {
-        return this.nutritionService.getCurrentMacroTarget(userId);
+        return this.macroTargetService.getCurrentMacroTarget(userId);
     }
 
     @Get('targets')
@@ -342,7 +352,7 @@ export class NutritionController {
     async getMacroTargets(
         @CurrentUser('id') userId: string
     ): Promise<MacroTargetResponseDto[]> {
-        return this.nutritionService.getUserMacroTargets(userId);
+        return this.macroTargetService.getUserMacroTargets(userId);
     }
 
     @Patch('targets/:id')
@@ -365,7 +375,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: UpdateMacroTargetDto,
     ): Promise<MacroTargetResponseDto> {
-        return this.nutritionService.updateMacroTarget(id, userId, dto);
+        return this.macroTargetService.updateMacroTarget(id, userId, dto);
     }
 
     @Delete('targets/:id')
@@ -383,7 +393,7 @@ export class NutritionController {
         @Param('id') id: string,
         @CurrentUser('id') userId: string,
     ): Promise<void> {
-        return this.nutritionService.deleteMacroTarget(id, userId);
+        return this.macroTargetService.deleteMacroTarget(id, userId);
     }
 
     // ==================== GROCERY LISTS ====================
@@ -406,7 +416,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: CreateGroceryListDto,
     ): Promise<GroceryListResponseDto> {
-        return this.nutritionService.createGroceryList(userId, dto);
+        return this.groceryListService.createGroceryList(userId, dto);
     }
 
     @Get('grocery-lists')
@@ -424,7 +434,7 @@ export class NutritionController {
     async getGroceryLists(
         @CurrentUser('id') userId: string
     ): Promise<GroceryListResponseDto[]> {
-        return this.nutritionService.getUserGroceryLists(userId);
+        return this.groceryListService.getUserGroceryLists(userId);
     }
 
     @Get('grocery-lists/:id')
@@ -446,7 +456,7 @@ export class NutritionController {
         @Param('id') id: string,
         @CurrentUser('id') userId: string,
     ): Promise<GroceryListResponseDto> {
-        return this.nutritionService.getGroceryList(id, userId);
+        return this.groceryListService.getGroceryList(id, userId);
     }
 
     @Patch('grocery-lists/:id')
@@ -469,7 +479,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: UpdateGroceryListDto,
     ): Promise<GroceryListResponseDto> {
-        return this.nutritionService.updateGroceryList(id, userId, dto);
+        return this.groceryListService.updateGroceryList(id, userId, dto);
     }
 
     @Delete('grocery-lists/:id')
@@ -487,6 +497,6 @@ export class NutritionController {
         @Param('id') id: string,
         @CurrentUser('id') userId: string,
     ): Promise<void> {
-        return this.nutritionService.deleteGroceryList(id, userId);
+        return this.groceryListService.deleteGroceryList(id, userId);
     }
 }
