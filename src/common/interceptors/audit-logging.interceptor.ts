@@ -45,7 +45,7 @@ export class AuditLoggingInterceptor implements NestInterceptor {
             return next.handle();
         }
 
-        const userId = request.user?.sub; // From JWT
+        const userId = request.user?.id || request.user?.sub; // From JWT (id for our strategy, sub for standard JWT)
         const route = request.route?.path || request.url;
         const ip = request.ip || request.connection?.remoteAddress;
         const userAgent = request.headers['user-agent'];

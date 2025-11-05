@@ -412,7 +412,6 @@ export class NutritionController {
     @AuditEntity('GroceryList')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 20, ttl: 60000 } })
-    @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
     @ApiOperation({
         summary: 'Create a grocery list',
         description: 'Create a new grocery list with items'
@@ -432,7 +431,6 @@ export class NutritionController {
 
     @Get('grocery-lists')
     @Throttle({ default: { limit: 100, ttl: 60000 } })
-    @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
     @ApiOperation({
         summary: 'Get all grocery lists',
         description: 'Retrieve all grocery lists for the user'
@@ -450,7 +448,6 @@ export class NutritionController {
 
     @Get('grocery-lists/:id')
     @Throttle({ default: { limit: 100, ttl: 60000 } })
-    @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
     @ApiOperation({
         summary: 'Get single grocery list',
         description: 'Retrieve a specific grocery list by ID'
@@ -473,7 +470,6 @@ export class NutritionController {
     @Patch('grocery-lists/:id')
     @AuditEntity('GroceryList')
     @Throttle({ default: { limit: 30, ttl: 60000 } })
-    @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
     @ApiOperation({
         summary: 'Update a grocery list',
         description: 'Partially update a grocery list and its items'

@@ -75,6 +75,7 @@ export class FoodItemService {
 
             // Invalidate food items cache
             await this.invalidateFoodCache();
+            await this.invalidateItemCache(foodItem.id);
 
             this.logger.log(`Successfully created food item ${foodItem.id}`);
             return this.toFoodItemDto(foodItem);
@@ -205,6 +206,7 @@ export class FoodItemService {
 
             // Invalidate cache
             await this.invalidateFoodCache();
+            await this.invalidateItemCache(id);
 
             return this.toFoodItemDto(foodItem);
         } catch (error) {
@@ -238,6 +240,7 @@ export class FoodItemService {
 
             // Invalidate cache
             await this.invalidateFoodCache();
+            await this.invalidateItemCache(id);
         } catch (error) {
             if (error instanceof FoodItemNotFoundException) {
                 throw error;
@@ -294,5 +297,14 @@ export class FoodItemService {
         const cacheKey = this.configService.get<string>('cache.keys.foodItems') || 'food-items-all';
         await this.cacheManager.del(cacheKey);
         this.logger.debug('Invalidated food items cache');
+    }
+
+    /**
+     * Invalidate specific food item cache by ID
+     */
+    private async invalidateItemCache(id: string): Promise<void> {
+        const cacheKey = `food-item:/nutrition/foods/${id}`;
+        await this.cacheManager.del(cacheKey);
+        this.logger.debug(`Invalidated cache for food item ${id}`);
     }
 }

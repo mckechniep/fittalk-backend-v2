@@ -324,7 +324,7 @@ export class GroceryListService {
                 foodItemId: item.foodItemId,
                 name: item.name,
                 quantity: item.quantity,
-                isChecked: item.isChecked,
+                isChecked: Boolean(item.isChecked),
                 createdAt: item.createdAt,
                 updatedAt: item.updatedAt,
                 foodItem: item.foodItem ? this.toFoodItemDto(item.foodItem) : null,

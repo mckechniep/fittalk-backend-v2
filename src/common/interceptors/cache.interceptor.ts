@@ -63,27 +63,27 @@ export class HttpCacheInterceptor implements NestInterceptor {
 
         const { key, ttl } = cacheMetadata;
 
-        // Build cache key with query params
+        // Build cache key with URL (includes path params) and query params
         const queryString = new URLSearchParams(request.query).toString();
-        const cacheKey = queryString ? `${key}:${queryString}` : key;
+        const fullCacheKey = `${key}:${url}${queryString ? '?' + queryString : ''}`;
 
         try {
             // Try to get from cache
-            const cachedResponse = await this.cacheManager.get(cacheKey);
+            const cachedResponse = await this.cacheManager.get(fullCacheKey);
 
             if (cachedResponse) {
-                this.logger.debug(`Cache HIT: ${cacheKey}`);
+                this.logger.debug(`Cache HIT: ${fullCacheKey}`);
                 return of(cachedResponse);
             }
 
-            this.logger.debug(`Cache MISS: ${cacheKey}`);
+            this.logger.debug(`Cache MISS: ${fullCacheKey}`);
 
             // Cache the response
             return next.handle().pipe(
                 tap(async (response) => {
                     try {
-                        await this.cacheManager.set(cacheKey, response, ttl * 1000);
-                        this.logger.debug(`Cached response for ${cacheKey} (TTL: ${ttl}s)`);
+                        await this.cacheManager.set(fullCacheKey, response, ttl * 1000);
+                        this.logger.debug(`Cached response for ${fullCacheKey} (TTL: ${ttl}s)`);
                     } catch (error) {
                         this.logger.error(`Failed to cache response: ${error.message}`);
                     }

@@ -1,6 +1,6 @@
 // dtos/grocery-list-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose, Type } from 'class-transformer';
+import { Expose, Type, Transform } from 'class-transformer';
 import { FoodItemResponseDto } from './food-item-response.dto';
 
 /**
@@ -46,6 +46,7 @@ export class GroceryItemResponseDto {
 
     @ApiProperty({ description: 'Whether item is checked off', example: false })
     @Expose()
+    @Transform(({ value }) => Boolean(value))
     isChecked: boolean;
 
     @ApiProperty({ description: 'Creation timestamp' })

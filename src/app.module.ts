@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -40,6 +41,13 @@ import {
       ],
     }),
 
+    // Cache (in-memory caching for food items, etc.)
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 1800000, // 30 minutes default TTL (in milliseconds)
+      max: 100, // Maximum number of items in cache
+    }),
+
     // Rate limiting
     ThrottlerModule.forRoot([
       {
@@ -67,6 +75,11 @@ import {
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Global Throttler Guard
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })

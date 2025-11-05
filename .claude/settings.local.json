@@ -1,22 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat:*)",
-      "Bash(chmod:*)",
-      "Bash(curl:*)",
-      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk status --porcelain)",
-      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk check-ignore .env)",
-      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk ls-files:*)",
-      "Bash(git -C /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk log --all --full-history --source -- .env)",
-      "Bash(mkdir:*)",
-      "Bash(npx tsc:*)",
-      "Bash(npx prisma generate:*)",
-      "Bash(tree:*)",
-      "Bash(for file in src/modules/nutrition/services/*.ts)",
-      "Bash(head:*)",
-      "Bash(done)",
-      "Bash(npx prisma migrate dev:*)",
-      "Bash(npx prisma migrate:*)"
+      "Bash(npx prisma db push:*)",
+      "Bash(npx prisma db execute:*)"
     ],
     "deny": [],
     "ask": []

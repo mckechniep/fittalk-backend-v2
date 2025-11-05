@@ -37,6 +37,8 @@ export class TransformInterceptor<T> implements NestInterceptor {
                     return data.map((item) =>
                         plainToInstance(this.classType, item, {
                             excludeExtraneousValues: true,
+                            enableImplicitConversion: true,
+                            exposeDefaultValues: true,
                         })
                     );
                 }
@@ -50,10 +52,14 @@ export class TransformInterceptor<T> implements NestInterceptor {
                             ? data[dataKey].map((item: any) =>
                                 plainToInstance(this.classType, item, {
                                     excludeExtraneousValues: true,
+                                    enableImplicitConversion: true,
+                                    exposeDefaultValues: true,
                                 })
                             )
                             : plainToInstance(this.classType, data[dataKey], {
                                 excludeExtraneousValues: true,
+                                enableImplicitConversion: true,
+                                exposeDefaultValues: true,
                             }),
                     };
                 }
@@ -61,6 +67,8 @@ export class TransformInterceptor<T> implements NestInterceptor {
                 // Handle single objects
                 return plainToInstance(this.classType, data, {
                     excludeExtraneousValues: true,
+                    enableImplicitConversion: true,
+                    exposeDefaultValues: true,
                 });
             })
         );
