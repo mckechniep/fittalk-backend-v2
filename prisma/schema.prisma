@@ -28,6 +28,7 @@ model User {
   groceryLists         GroceryList[]
   liveWorkoutSessions  LiveWorkoutSession[]
   macroTargets         MacroTarget[]
+  mealLogs             MealLog[]
   notifications        Notification[]
   personalRecords      PersonalRecord[]
   preferences          Preference?
@@ -313,6 +314,7 @@ model FoodItem {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   groceryItems GroceryItem[]
+  mealEntries  MealEntry[]
 
   @@index([name])
   @@index([deletedAt])
@@ -346,6 +348,36 @@ model GroceryItem {
   list       GroceryList @relation(fields: [listId], references: [id], onDelete: Cascade)
 
   @@index([listId])
+  @@index([foodItemId])
+}
+
+model MealLog {
+  id        String      @id @default(uuid())
+  userId    String
+  mealType  String
+  loggedAt  DateTime    @default(now())
+  notes     String?
+  deletedAt DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  entries   MealEntry[]
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+  @@index([deletedAt])
+}
+
+model MealEntry {
+  id         String    @id @default(uuid())
+  mealLogId  String
+  foodItemId String
+  servings   Decimal   @db.Decimal(6, 2)
+  servingG   Int?
+  createdAt  DateTime  @default(now())
+  foodItem   FoodItem  @relation(fields: [foodItemId], references: [id])
+  mealLog    MealLog   @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+
+  @@index([mealLogId])
   @@index([foodItemId])
 }
 

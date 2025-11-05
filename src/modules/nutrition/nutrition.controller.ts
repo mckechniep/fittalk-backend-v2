@@ -27,6 +27,7 @@ import { NutritionService } from './nutrition.service';
 import { FoodItemService } from './services/food-item.service';
 import { MacroTargetService } from './services/macro-target.service';
 import { GroceryListService } from './services/grocery-list.service';
+import { MealLogService } from './services/meal-log.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CacheKey } from '../../common/decorators/cache-key.decorator';
@@ -80,6 +81,7 @@ export class NutritionController {
         private readonly foodItemService: FoodItemService,
         private readonly macroTargetService: MacroTargetService,
         private readonly groceryListService: GroceryListService,
+        private readonly mealLogService: MealLogService,
     ) { }
 
     // ==================== FOOD ITEMS ====================
@@ -149,6 +151,7 @@ export class NutritionController {
     }
 
     @Patch('foods/:id')
+    @AuditEntity('FoodItem')
     @Throttle({ default: { limit: 20, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(FoodItemResponseDto))
     @ApiOperation({
@@ -170,6 +173,7 @@ export class NutritionController {
     }
 
     @Delete('foods/:id')
+    @AuditEntity('FoodItem')
     @HttpCode(HttpStatus.NO_CONTENT)
     @Throttle({ default: { limit: 20, ttl: 60000 } })
     @ApiOperation({
@@ -186,6 +190,7 @@ export class NutritionController {
     // ==================== MEAL LOGS ====================
 
     @Post('meals')
+    @AuditEntity('MealLog')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 30, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(MealLogResponseDto))
@@ -203,7 +208,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: CreateMealLogDto,
     ): Promise<MealLogResponseDto> {
-        return this.nutritionService.createMealLog(userId, dto);
+        return this.mealLogService.createMealLog(userId, dto);
     }
 
     @Get('meals')
@@ -227,7 +232,7 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Query() query: GetMealLogsQueryDto,
     ): Promise<PaginatedMealLogsResponseDto> {
-        return this.nutritionService.getUserMealLogs(userId, query);
+        return this.mealLogService.getUserMealLogs(userId, query);
     }
 
     @Get('meals/:id')
@@ -249,10 +254,11 @@ export class NutritionController {
         @Param('id') id: string,
         @CurrentUser('id') userId: string,
     ): Promise<MealLogResponseDto> {
-        return this.nutritionService.getMealLog(id, userId);
+        return this.mealLogService.getMealLog(id, userId);
     }
 
     @Patch('meals/:id')
+    @AuditEntity('MealLog')
     @Throttle({ default: { limit: 30, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(MealLogResponseDto))
     @ApiOperation({
@@ -272,10 +278,11 @@ export class NutritionController {
         @CurrentUser('id') userId: string,
         @Body() dto: UpdateMealLogDto,
     ): Promise<MealLogResponseDto> {
-        return this.nutritionService.updateMealLog(id, userId, dto);
+        return this.mealLogService.updateMealLog(id, userId, dto);
     }
 
     @Delete('meals/:id')
+    @AuditEntity('MealLog')
     @HttpCode(HttpStatus.NO_CONTENT)
     @Throttle({ default: { limit: 30, ttl: 60000 } })
     @ApiOperation({
@@ -290,12 +297,13 @@ export class NutritionController {
         @Param('id') id: string,
         @CurrentUser('id') userId: string,
     ): Promise<void> {
-        return this.nutritionService.deleteMealLog(id, userId);
+        return this.mealLogService.deleteMealLog(id, userId);
     }
 
     // ==================== MACRO TARGETS ====================
 
     @Post('targets')
+    @AuditEntity('MacroTarget')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 10, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(MacroTargetResponseDto))
@@ -356,6 +364,7 @@ export class NutritionController {
     }
 
     @Patch('targets/:id')
+    @AuditEntity('MacroTarget')
     @Throttle({ default: { limit: 20, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(MacroTargetResponseDto))
     @ApiOperation({
@@ -379,6 +388,7 @@ export class NutritionController {
     }
 
     @Delete('targets/:id')
+    @AuditEntity('MacroTarget')
     @HttpCode(HttpStatus.NO_CONTENT)
     @Throttle({ default: { limit: 20, ttl: 60000 } })
     @ApiOperation({
@@ -399,6 +409,7 @@ export class NutritionController {
     // ==================== GROCERY LISTS ====================
 
     @Post('grocery-lists')
+    @AuditEntity('GroceryList')
     @HttpCode(HttpStatus.CREATED)
     @Throttle({ default: { limit: 20, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
@@ -460,6 +471,7 @@ export class NutritionController {
     }
 
     @Patch('grocery-lists/:id')
+    @AuditEntity('GroceryList')
     @Throttle({ default: { limit: 30, ttl: 60000 } })
     @UseInterceptors(new TransformInterceptor(GroceryListResponseDto))
     @ApiOperation({
@@ -483,6 +495,7 @@ export class NutritionController {
     }
 
     @Delete('grocery-lists/:id')
+    @AuditEntity('GroceryList')
     @HttpCode(HttpStatus.NO_CONTENT)
     @Throttle({ default: { limit: 30, ttl: 60000 } })
     @ApiOperation({

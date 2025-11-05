@@ -5,6 +5,7 @@ import { NutritionService } from './nutrition.service';
 import { FoodItemService } from './services/food-item.service';
 import { MacroTargetService } from './services/macro-target.service';
 import { GroceryListService } from './services/grocery-list.service';
+import { MealLogService } from './services/meal-log.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 
 /**
@@ -26,7 +27,8 @@ import { PrismaModule } from '../../prisma/prisma.module';
  * - FoodItemService: Food item CRUD, caching, validation
  * - MacroTargetService: Macro target management, ownership validation
  * - GroceryListService: Grocery list CRUD, transaction handling
- * - NutritionService: Meal logging (future implementation)
+ * - MealLogService: Meal logging with nutrition calculations
+ * - NutritionService: Legacy service (deprecated, to be removed)
  *
  * Dependencies:
  * - PrismaModule: Database access (@Global, provides PrismaService)
@@ -69,13 +71,15 @@ import { PrismaModule } from '../../prisma/prisma.module';
         FoodItemService,      // Food item CRUD
         MacroTargetService,   // Macro target management
         GroceryListService,   // Grocery list management
-        NutritionService,     // Meal logging (future)
+        MealLogService,       // Meal logging with nutrition calculations
+        NutritionService,     // Legacy service (deprecated)
     ],
     exports: [
         FoodItemService,      // Exported for AI meal recommendations
         MacroTargetService,   // Exported for Goals and Analytics modules
         GroceryListService,   // Exported for meal planning features
-        NutritionService,     // Exported for cross-module nutrition data
+        MealLogService,       // Exported for Analytics and AI modules
+        NutritionService,     // Legacy service (deprecated)
     ],
 })
 export class NutritionModule { }

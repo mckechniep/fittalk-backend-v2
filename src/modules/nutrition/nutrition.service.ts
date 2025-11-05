@@ -15,9 +15,6 @@ import { FoodItem, GroceryList, MacroTarget } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { CreateFoodItemDto } from './dtos/create-food-item.dto';
 import { UpdateFoodItemDto } from './dtos/update-food-item.dto';
-import { CreateMealLogDto } from './dtos/create-meal-log.dto';
-import { UpdateMealLogDto } from './dtos/update-meal-log.dto';
-import { GetMealLogsQueryDto } from './dtos/get-meal-logs-query.dto';
 import { CreateMacroTargetDto } from './dtos/create-macro-target.dto';
 import { UpdateMacroTargetDto } from './dtos/update-macro-target.dto';
 import { CreateGroceryListDto } from './dtos/create-grocery-list.dto';
@@ -269,28 +266,9 @@ export class NutritionService {
     }
 
     // ==================== MEAL LOGS ====================
-    // NOTE: These methods are placeholders until MealLog and MealEntry tables are added to the schema
-
-    async createMealLog(userId: string, dto: CreateMealLogDto): Promise<never> {
-        this.logger.log(`Creating meal log for user ${userId}`);
-        throw new Error('Meal logging not yet implemented - pending schema migration');
-    }
-
-    async getUserMealLogs(userId: string, query: GetMealLogsQueryDto): Promise<never> {
-        throw new Error('Meal logging not yet implemented - pending schema migration');
-    }
-
-    async getMealLog(id: string, userId: string): Promise<never> {
-        throw new Error('Meal logging not yet implemented - pending schema migration');
-    }
-
-    async updateMealLog(id: string, userId: string, dto: UpdateMealLogDto): Promise<never> {
-        throw new Error('Meal logging not yet implemented - pending schema migration');
-    }
-
-    async deleteMealLog(id: string, userId: string): Promise<void> {
-        throw new Error('Meal logging not yet implemented - pending schema migration');
-    }
+    // DEPRECATED: Meal logging functionality moved to MealLogService
+    // This service is kept for backwards compatibility but should not be used
+    // Use MealLogService from ./services/meal-log.service.ts instead
 
     // ==================== MACRO TARGETS ====================
 

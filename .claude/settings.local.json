@@ -11,7 +11,12 @@
       "Bash(mkdir:*)",
       "Bash(npx tsc:*)",
       "Bash(npx prisma generate:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(for file in src/modules/nutrition/services/*.ts)",
+      "Bash(head:*)",
+      "Bash(done)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma migrate:*)"
     ],
     "deny": [],
     "ask": []

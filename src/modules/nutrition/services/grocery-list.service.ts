@@ -340,7 +340,7 @@ export class GroceryListService {
             id: foodItem.id,
             name: foodItem.name,
             brand: foodItem.brand,
-            servingG: decimalToNumber(foodItem.servingG),
+            servingG: foodItem.servingG ?? 0, // servingG is Int?, not Decimal
             calories: foodItem.calories,
             proteinG: decimalToNumber(foodItem.proteinG),
             carbsG: decimalToNumber(foodItem.carbsG),
