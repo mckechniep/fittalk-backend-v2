@@ -5,8 +5,11 @@ import {
     ForbiddenException,
     BadRequestException,
     Logger,
+    InternalServerErrorException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import {
     CreateWorkoutLogDto,
@@ -50,7 +53,10 @@ import {
 export class WorkoutLoggingService {
     private readonly logger = new Logger(WorkoutLoggingService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly configService: ConfigService,
+    ) { }
 
     /**
      * Create a workout log with sets.
@@ -88,53 +94,111 @@ export class WorkoutLoggingService {
         // Validate optional plan/day/item references
         await this.validatePlanReferences(userId, dto);
 
-        // Create log and sets in transaction
-        const workoutLog = await this.prisma.$transaction(async (tx) => {
-            // Create workout log
-            const log = await tx.workoutLog.create({
-                data: {
-                    userId,
-                    exerciseId: dto.exerciseId,
-                    planId: dto.planId || null,
-                    dayId: dto.dayId || null,
-                    itemId: dto.itemId || null,
-                    performedAt: dto.performedAt ? new Date(dto.performedAt) : new Date(),
-                    durationMin: dto.durationMin || null,
-                    notes: dto.notes || null,
-                },
-            });
+        // Get transaction configuration
+        const txConfig = this.configService.get('transaction.default') || {
+            maxWait: 2000,
+            timeout: 5000,
+            isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        };
 
-            // Create all sets
-            await tx.workoutSet.createMany({
-                data: dto.sets.map((set, index) => ({
-                    logId: log.id,
-                    setNumber: index + 1, // 1-indexed
-                    reps: set.reps ?? null,
-                    weightKg: set.weightKg ?? null,
-                    rir: set.rir ?? null,
-                    completed: set.completed ?? true,
-                })),
-            });
-
-            // Fetch complete log with sets and exercise
-            return tx.workoutLog.findUnique({
-                where: { id: log.id },
-                include: {
-                    sets: {
-                        orderBy: { setNumber: 'asc' },
+        try {
+            // Create log and sets in transaction with proper error handling
+            const workoutLog = await this.prisma.$transaction(async (tx) => {
+                // Create workout log
+                const log = await tx.workoutLog.create({
+                    data: {
+                        userId,
+                        exerciseId: dto.exerciseId,
+                        planId: dto.planId || null,
+                        dayId: dto.dayId || null,
+                        itemId: dto.itemId || null,
+                        performedAt: dto.performedAt ? new Date(dto.performedAt) : new Date(),
+                        durationMin: dto.durationMin || null,
+                        notes: dto.notes || null,
                     },
-                    exercise: true,
-                },
-            });
-        });
+                });
 
-        if (!workoutLog) {
-            throw new Error('Failed to create workout log');
+                // Create all sets
+                await tx.workoutSet.createMany({
+                    data: dto.sets.map((set, index) => ({
+                        logId: log.id,
+                        setNumber: index + 1, // 1-indexed
+                        reps: set.reps ?? null,
+                        weightKg: set.weightKg ?? null,
+                        rir: set.rir ?? null,
+                        completed: set.completed ?? true,
+                    })),
+                });
+
+                // Fetch complete log with sets and exercise
+                return tx.workoutLog.findUnique({
+                    where: { id: log.id },
+                    include: {
+                        sets: {
+                            orderBy: { setNumber: 'asc' },
+                        },
+                        exercise: true,
+                    },
+                });
+            }, txConfig);
+
+            if (!workoutLog) {
+                throw new InternalServerErrorException('Failed to create workout log');
+            }
+
+            this.logger.log(`Successfully created workout log ${workoutLog.id}`);
+
+            return this.transformToResponseDto(workoutLog);
+        } catch (error) {
+            // Handle Prisma-specific errors
+            if (error instanceof Prisma.PrismaClientKnownRequestError) {
+                this.logger.error(`Prisma error creating workout log: ${error.code} - ${error.message}`, error.stack);
+
+                switch (error.code) {
+                    case 'P2002':
+                        // Unique constraint violation
+                        throw new BadRequestException({
+                            message: 'A workout log with this data already exists',
+                            error: 'WorkoutLogAlreadyExists',
+                        });
+                    case 'P2003':
+                        // Foreign key constraint violation
+                        throw new BadRequestException({
+                            message: 'Invalid reference to exercise, plan, day, or item',
+                            error: 'InvalidForeignKey',
+                        });
+                    case 'P2025':
+                        // Record not found
+                        throw new NotFoundException({
+                            message: 'Referenced record not found',
+                            error: 'RecordNotFound',
+                        });
+                    default:
+                        throw new InternalServerErrorException({
+                            message: 'Database operation failed',
+                            error: 'DatabaseError',
+                        });
+                }
+            }
+
+            // Handle transaction timeout errors
+            if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+                this.logger.error(`Transaction timeout creating workout log: ${error.message}`, error.stack);
+                throw new InternalServerErrorException({
+                    message: 'Operation timed out. Please try again.',
+                    error: 'TransactionTimeout',
+                });
+            }
+
+            // Re-throw if already a NestJS exception
+            if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof InternalServerErrorException) {
+                throw error;
+            }
+
+            // Generic error handling
+            this.logger.error(`Failed to create workout log: ${error.message}`, error.stack);
+            throw new InternalServerErrorException('Failed to create workout log');
         }
-
-        this.logger.log(`Successfully created workout log ${workoutLog.id}`);
-
-        return this.transformToResponseDto(workoutLog);
     }
 
     /**
@@ -275,29 +339,81 @@ export class WorkoutLoggingService {
 
         this.logger.log(`Updating workout log ${logId}`);
 
-        // Update in transaction
-        await this.prisma.$transaction(async (tx) => {
-            // Update log fields
-            if (dto.durationMin !== undefined || dto.notes !== undefined) {
-                await tx.workoutLog.update({
-                    where: { id: logId },
-                    data: {
-                        ...(dto.durationMin !== undefined && {
-                            durationMin: dto.durationMin,
-                        }),
-                        ...(dto.notes !== undefined && { notes: dto.notes }),
-                    },
+        // Get transaction configuration
+        const txConfig = this.configService.get('transaction.default') || {
+            maxWait: 2000,
+            timeout: 5000,
+            isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        };
+
+        try {
+            // Update in transaction with proper error handling
+            await this.prisma.$transaction(async (tx) => {
+                // Update log fields
+                if (dto.durationMin !== undefined || dto.notes !== undefined) {
+                    await tx.workoutLog.update({
+                        where: { id: logId },
+                        data: {
+                            ...(dto.durationMin !== undefined && {
+                                durationMin: dto.durationMin,
+                            }),
+                            ...(dto.notes !== undefined && { notes: dto.notes }),
+                        },
+                    });
+                }
+
+                // Upsert sets if provided
+                if (dto.sets && dto.sets.length > 0) {
+                    await this.upsertSetsInTransaction(tx, logId, dto.sets);
+                }
+            }, txConfig);
+
+            // Return updated log
+            return this.getWorkoutLog(logId, userId);
+        } catch (error) {
+            // Handle Prisma-specific errors
+            if (error instanceof Prisma.PrismaClientKnownRequestError) {
+                this.logger.error(`Prisma error updating workout log ${logId}: ${error.code} - ${error.message}`, error.stack);
+
+                switch (error.code) {
+                    case 'P2002':
+                        // Unique constraint violation
+                        throw new BadRequestException({
+                            message: 'A workout log with this data already exists',
+                            error: 'WorkoutLogAlreadyExists',
+                        });
+                    case 'P2025':
+                        // Record not found during update
+                        throw new NotFoundException({
+                            message: `Workout log ${logId} not found`,
+                            error: 'WorkoutLogNotFound',
+                        });
+                    default:
+                        throw new InternalServerErrorException({
+                            message: 'Database operation failed',
+                            error: 'DatabaseError',
+                        });
+                }
+            }
+
+            // Handle transaction timeout errors
+            if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+                this.logger.error(`Transaction timeout updating workout log ${logId}: ${error.message}`, error.stack);
+                throw new InternalServerErrorException({
+                    message: 'Operation timed out. Please try again.',
+                    error: 'TransactionTimeout',
                 });
             }
 
-            // Upsert sets if provided
-            if (dto.sets && dto.sets.length > 0) {
-                await this.upsertSetsInTransaction(tx, logId, dto.sets);
+            // Re-throw if already a NestJS exception
+            if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof InternalServerErrorException) {
+                throw error;
             }
-        });
 
-        // Return updated log
-        return this.getWorkoutLog(logId, userId);
+            // Generic error handling
+            this.logger.error(`Failed to update workout log ${logId}: ${error.message}`, error.stack);
+            throw new InternalServerErrorException('Failed to update workout log');
+        }
     }
 
     /**

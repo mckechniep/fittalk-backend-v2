@@ -15,6 +15,7 @@ import {
 import { GoalsService } from './goals.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditEntity } from '../../common/decorators/audit-entity.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
@@ -48,12 +49,13 @@ export class GoalsController {
 
   /**
    * Create a new goal
-   * 
+   *
    * POST /goals
    * Body: CreateGoalDto
    * Returns: Created goal
    */
   @Post()
+  @AuditEntity('UserGoal')
   @HttpCode(HttpStatus.CREATED)
   async createGoal(
     @CurrentUser() user: AuthenticatedUser,
@@ -93,12 +95,13 @@ export class GoalsController {
 
   /**
    * Update goal details
-   * 
+   *
    * PATCH /goals/:id
    * Body: UpdateGoalDto
    * Returns: Updated goal
    */
   @Patch(':id')
+  @AuditEntity('UserGoal')
   async updateGoal(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) goalId: string,
@@ -109,12 +112,13 @@ export class GoalsController {
 
   /**
    * Update goal status
-   * 
+   *
    * PATCH /goals/:id/status
    * Body: UpdateGoalStatusDto
    * Returns: Updated goal
    */
   @Patch(':id/status')
+  @AuditEntity('UserGoal')
   async updateGoalStatus(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) goalId: string,
@@ -125,11 +129,12 @@ export class GoalsController {
 
   /**
    * Delete a goal
-   * 
+   *
    * DELETE /goals/:id
    * Returns: 204 No Content
    */
   @Delete(':id')
+  @AuditEntity('UserGoal')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteGoal(
     @CurrentUser() user: AuthenticatedUser,

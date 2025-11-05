@@ -4,9 +4,11 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import {
   CreateConsultationDto,
@@ -61,38 +63,78 @@ export class ConsultationService {
   ): Promise<ConsultationResponseDto> {
     this.logger.log(`Creating consultation session for user ${userId}`);
 
-    const session = await this.prisma.$transaction(async (tx) => {
-      // Create session
-      const newSession = await tx.consultationSession.create({
-        data: {
-          userId,
-          status: 'pending',
-        },
-      });
+    try {
+      const session = await this.prisma.$transaction(
+        async (tx) => {
+          // Create session
+          const newSession = await tx.consultationSession.create({
+            data: {
+              userId,
+              status: 'pending',
+            },
+          });
 
-      // Save any provided answers
-      if (dto.answers && dto.answers.length > 0) {
-        await this.saveAnswersInTransaction(tx, newSession.id, dto.answers);
+          // Save any provided answers
+          if (dto.answers && dto.answers.length > 0) {
+            await this.saveAnswersInTransaction(tx, newSession.id, dto.answers);
+          }
+
+          // Fetch complete session with answers
+          return tx.consultationSession.findUnique({
+            where: { id: newSession.id },
+            include: {
+              answers: {
+                include: {
+                  question: true,
+                },
+              },
+            },
+          });
+        },
+        {
+          maxWait: 2000, // Max time to wait for transaction lock
+          timeout: 5000, // Max transaction duration
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
+
+      if (!session) {
+        throw new InternalServerErrorException('Failed to create consultation session');
       }
 
-      // Fetch complete session with answers
-      return tx.consultationSession.findUnique({
-        where: { id: newSession.id },
-        include: {
-          answers: {
-            include: {
-              question: true,
-            },
-          },
-        },
-      });
-    });
+      return this.transformToResponseDto(session);
+    } catch (error) {
+      // Handle Prisma-specific errors
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          // Unique constraint violation
+          throw new BadRequestException('A consultation session already exists for this user');
+        }
+        if (error.code === 'P2025') {
+          // Record not found
+          throw new NotFoundException('Required resource not found during session creation');
+        }
+      }
 
-    if (!session) {
-      throw new Error('Failed to create consultation session');
+      // Handle timeout or lock errors
+      if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+        this.logger.error('Database transaction failed with unknown error', error);
+        throw new InternalServerErrorException('Failed to create consultation session due to database error');
+      }
+
+      // Re-throw known application exceptions
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
+      // Log and wrap unexpected errors
+      this.logger.error(`Unexpected error creating consultation session: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to create consultation session');
     }
-
-    return this.transformToResponseDto(session);
   }
 
   /**
@@ -201,13 +243,38 @@ export class ConsultationService {
       `Updating consultation ${sessionId} with ${dto.answers.length} answers`,
     );
 
-    // Upsert answers in transaction
-    await this.prisma.$transaction(async (tx) => {
-      await this.saveAnswersInTransaction(tx, sessionId, dto.answers);
-    });
+    try {
+      // Upsert answers in transaction
+      await this.prisma.$transaction(
+        async (tx) => {
+          await this.saveAnswersInTransaction(tx, sessionId, dto.answers);
+        },
+        {
+          maxWait: 2000,
+          timeout: 5000,
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
 
-    // Return updated session
-    return this.getSession(sessionId, userId);
+      // Return updated session
+      return this.getSession(sessionId, userId);
+    } catch (error) {
+      // Handle Prisma-specific errors
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Consultation session or question not found');
+        }
+      }
+
+      // Re-throw known application exceptions
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+
+      // Log and wrap unexpected errors
+      this.logger.error(`Failed to update consultation session: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to update consultation session');
+    }
   }
 
   /**
@@ -325,36 +392,61 @@ export class ConsultationService {
       }
     });
 
-    // Replace all windows in transaction
-    const windows = await this.prisma.$transaction(async (tx) => {
-      // Delete all existing
-      await tx.availabilityWindow.deleteMany({
-        where: { userId },
-      });
+    try {
+      // Replace all windows in transaction
+      const windows = await this.prisma.$transaction(
+        async (tx) => {
+          // Delete all existing
+          await tx.availabilityWindow.deleteMany({
+            where: { userId },
+          });
 
-      // Insert new (if any)
-      if (dto.windows.length === 0) {
-        return [];
+          // Insert new (if any)
+          if (dto.windows.length === 0) {
+            return [];
+          }
+
+          await tx.availabilityWindow.createMany({
+            data: dto.windows.map((window) => ({
+              userId,
+              dayOfWeek: window.dayOfWeek,
+              startMin: window.startMin,
+              endMin: window.endMin,
+              priority: window.priority ?? 0,
+            })),
+          });
+
+          // Fetch created windows
+          return tx.availabilityWindow.findMany({
+            where: { userId },
+            orderBy: [{ dayOfWeek: 'asc' }, { startMin: 'asc' }],
+          });
+        },
+        {
+          maxWait: 2000,
+          timeout: 5000,
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        },
+      );
+
+      return windows.map((w) => this.transformAvailabilityToDto(w));
+    } catch (error) {
+      // Handle Prisma-specific errors
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new BadRequestException('Duplicate availability window detected');
+        }
       }
 
-      await tx.availabilityWindow.createMany({
-        data: dto.windows.map((window) => ({
-          userId,
-          dayOfWeek: window.dayOfWeek,
-          startMin: window.startMin,
-          endMin: window.endMin,
-          priority: window.priority ?? 0,
-        })),
-      });
+      // Re-throw known application exceptions
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
 
-      // Fetch created windows
-      return tx.availabilityWindow.findMany({
-        where: { userId },
-        orderBy: [{ dayOfWeek: 'asc' }, { startMin: 'asc' }],
-      });
-    });
-
-    return windows.map((w) => this.transformAvailabilityToDto(w));
+      // Log and wrap unexpected errors
+      this.logger.error(`Failed to upsert availability windows: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to update availability windows');
+    }
   }
 
   /**

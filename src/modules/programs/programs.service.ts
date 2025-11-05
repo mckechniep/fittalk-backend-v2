@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
 import { UpdateProgramStatusDto } from './dto/update-program-status.dto';
@@ -29,7 +31,10 @@ import { PlanStatus } from '@prisma/client';
  */
 @Injectable()
 export class ProgramsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // ==================== PROGRAM CRUD ====================
 
@@ -211,54 +216,108 @@ export class ProgramsService {
     // Verify ownership and get full program structure
     const sourceProgram = await this.getProgramById(userId, sourceProgramId);
 
-    // Clone in transaction (all-or-nothing)
-    const clonedProgram = await this.prisma.$transaction(async (tx) => {
-      // Create new program
-      const newProgram = await tx.workoutPlan.create({
-        data: {
-          userId,
-          title: `${sourceProgram.title} (Copy)`,
-          weeks: sourceProgram.weeks,
-          status: PlanStatus.draft,
-          sourceJson: sourceProgram.sourceJson as any,
-        },
-      });
+    // Get transaction configuration - use longRunning config for deep cloning
+    const txConfig = this.configService.get('transaction.longRunning') || {
+      maxWait: 5000,
+      timeout: 15000,
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    };
 
-      // Clone all days
-      for (const day of sourceProgram.days) {
-        const newDay = await tx.workoutDay.create({
+    try {
+      // Clone in transaction (all-or-nothing) with proper error handling
+      const clonedProgram = await this.prisma.$transaction(async (tx) => {
+        // Create new program
+        const newProgram = await tx.workoutPlan.create({
           data: {
-            planId: newProgram.id,
-            weekNumber: day.weekNumber,
-            dayNumber: day.dayNumber,
-            focus: day.focus,
-            notes: day.notes,
+            userId,
+            title: `${sourceProgram.title} (Copy)`,
+            weeks: sourceProgram.weeks,
+            status: PlanStatus.draft,
+            sourceJson: sourceProgram.sourceJson as any,
           },
         });
 
-        // Clone all items for this day
-        for (const item of day.items) {
-          await tx.workoutItem.create({
+        // Clone all days
+        for (const day of sourceProgram.days) {
+          const newDay = await tx.workoutDay.create({
             data: {
-              dayId: newDay.id,
-              order: item.order,
-              exerciseId: item.exerciseId,
-              targetSets: item.targetSets,
-              targetReps: item.targetReps,
-              targetRir: item.targetRir,
-              targetWeight: item.targetWeight,
-              restSec: item.restSec,
-              notes: item.notes,
+              planId: newProgram.id,
+              weekNumber: day.weekNumber,
+              dayNumber: day.dayNumber,
+              focus: day.focus,
+              notes: day.notes,
             },
           });
+
+          // Clone all items for this day
+          for (const item of day.items) {
+            await tx.workoutItem.create({
+              data: {
+                dayId: newDay.id,
+                order: item.order,
+                exerciseId: item.exerciseId,
+                targetSets: item.targetSets,
+                targetReps: item.targetReps,
+                targetRir: item.targetRir,
+                targetWeight: item.targetWeight,
+                restSec: item.restSec,
+                notes: item.notes,
+              },
+            });
+          }
+        }
+
+        return newProgram;
+      }, txConfig);
+
+      // Return full cloned program with all nested data
+      return this.getProgramById(userId, clonedProgram.id);
+    } catch (error) {
+      // Handle Prisma-specific errors
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        switch (error.code) {
+          case 'P2002':
+            // Unique constraint violation
+            throw new BadRequestException({
+              message: 'A program with this data already exists',
+              error: 'ProgramAlreadyExists',
+            });
+          case 'P2003':
+            // Foreign key constraint violation
+            throw new BadRequestException({
+              message: 'Invalid reference to exercise or other entity',
+              error: 'InvalidForeignKey',
+            });
+          case 'P2025':
+            // Record not found
+            throw new NotFoundException({
+              message: 'Source program or related entity not found',
+              error: 'RecordNotFound',
+            });
+          default:
+            throw new InternalServerErrorException({
+              message: 'Database operation failed while cloning program',
+              error: 'DatabaseError',
+            });
         }
       }
 
-      return newProgram;
-    });
+      // Handle transaction timeout errors
+      if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+        throw new InternalServerErrorException({
+          message: 'Operation timed out. The program may be too large to clone. Please try again.',
+          error: 'TransactionTimeout',
+        });
+      }
 
-    // Return full cloned program with all nested data
-    return this.getProgramById(userId, clonedProgram.id);
+      // Re-throw if already a NestJS exception
+      if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+
+      // Generic error handling
+      throw new InternalServerErrorException('Failed to clone program');
+    }
   }
 
   // ==================== WORKOUT DAY CRUD ====================

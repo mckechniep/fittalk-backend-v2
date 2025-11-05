@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Redis for session state, distributed locks, and WebSocket adapter
   redis:

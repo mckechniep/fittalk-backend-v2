@@ -15,6 +15,7 @@ import {
 import { ProgramsService } from './programs.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditEntity } from '../../common/decorators/audit-entity.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
@@ -70,6 +71,7 @@ export class ProgramsController {
    * POST /programs
    */
   @Post()
+  @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.CREATED)
   async createProgram(
     @CurrentUser() user: AuthenticatedUser,
@@ -107,6 +109,7 @@ export class ProgramsController {
    * PATCH /programs/:id
    */
   @Patch(':id')
+  @AuditEntity('WorkoutPlan')
   async updateProgram(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) programId: string,
@@ -120,6 +123,7 @@ export class ProgramsController {
    * PATCH /programs/:id/status
    */
   @Patch(':id/status')
+  @AuditEntity('WorkoutPlan')
   async updateProgramStatus(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) programId: string,
@@ -133,6 +137,7 @@ export class ProgramsController {
    * DELETE /programs/:id
    */
   @Delete(':id')
+  @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteProgram(
     @CurrentUser() user: AuthenticatedUser,
@@ -146,6 +151,7 @@ export class ProgramsController {
    * POST /programs/:id/clone
    */
   @Post(':id/clone')
+  @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.CREATED)
   async cloneProgram(
     @CurrentUser() user: AuthenticatedUser,
@@ -161,6 +167,7 @@ export class ProgramsController {
    * POST /programs/:id/days
    */
   @Post(':id/days')
+  @AuditEntity('WorkoutDay')
   @HttpCode(HttpStatus.CREATED)
   async createWorkoutDay(
     @CurrentUser() user: AuthenticatedUser,
@@ -175,6 +182,7 @@ export class ProgramsController {
    * PATCH /programs/:id/days/:dayId
    */
   @Patch(':id/days/:dayId')
+  @AuditEntity('WorkoutDay')
   async updateWorkoutDay(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) programId: string,
@@ -189,6 +197,7 @@ export class ProgramsController {
    * DELETE /programs/:id/days/:dayId
    */
   @Delete(':id/days/:dayId')
+  @AuditEntity('WorkoutDay')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkoutDay(
     @CurrentUser() user: AuthenticatedUser,
@@ -205,6 +214,7 @@ export class ProgramsController {
    * POST /programs/:id/days/:dayId/items
    */
   @Post(':id/days/:dayId/items')
+  @AuditEntity('WorkoutItem')
   @HttpCode(HttpStatus.CREATED)
   async createWorkoutItem(
     @CurrentUser() user: AuthenticatedUser,
@@ -220,6 +230,7 @@ export class ProgramsController {
    * PATCH /programs/:id/days/:dayId/items/:itemId
    */
   @Patch(':id/days/:dayId/items/:itemId')
+  @AuditEntity('WorkoutItem')
   async updateWorkoutItem(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) programId: string,
@@ -235,6 +246,7 @@ export class ProgramsController {
    * DELETE /programs/:id/days/:dayId/items/:itemId
    */
   @Delete(':id/days/:dayId/items/:itemId')
+  @AuditEntity('WorkoutItem')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkoutItem(
     @CurrentUser() user: AuthenticatedUser,
