@@ -1,7 +1,6 @@
 // nutrition.module.ts
 import { Module } from '@nestjs/common';
 import { NutritionController } from './nutrition.controller';
-import { NutritionService } from './nutrition.service';
 import { FoodItemService } from './services/food-item.service';
 import { MacroTargetService } from './services/macro-target.service';
 import { GroceryListService } from './services/grocery-list.service';
@@ -28,17 +27,15 @@ import { PrismaModule } from '../../prisma/prisma.module';
  * - MacroTargetService: Macro target management, ownership validation
  * - GroceryListService: Grocery list CRUD, transaction handling
  * - MealLogService: Meal logging with nutrition calculations
- * - NutritionService: Legacy service (deprecated, to be removed)
  *
  * Dependencies:
  * - PrismaModule: Database access (@Global, provides PrismaService)
  *
  * Exports:
- * - NutritionService: Available to other modules
- *   - AI module: Analyzes nutrition patterns for recommendations
- *   - Analytics module: Calculates nutrition adherence and trends
- *   - Goals module: Tracks nutrition goals progress
- *   - Profile module: Displays recent nutrition activity
+ * - FoodItemService: Available for AI meal recommendations
+ * - MacroTargetService: Available for Goals and Analytics modules
+ * - GroceryListService: Available for meal planning features
+ * - MealLogService: Available for Analytics and AI modules
  *
  * Design decisions:
  * - Single controller: All nutrition operations in one place
@@ -72,14 +69,12 @@ import { PrismaModule } from '../../prisma/prisma.module';
         MacroTargetService,   // Macro target management
         GroceryListService,   // Grocery list management
         MealLogService,       // Meal logging with nutrition calculations
-        NutritionService,     // Legacy service (deprecated)
     ],
     exports: [
         FoodItemService,      // Exported for AI meal recommendations
         MacroTargetService,   // Exported for Goals and Analytics modules
         GroceryListService,   // Exported for meal planning features
         MealLogService,       // Exported for Analytics and AI modules
-        NutritionService,     // Legacy service (deprecated)
     ],
 })
 export class NutritionModule { }

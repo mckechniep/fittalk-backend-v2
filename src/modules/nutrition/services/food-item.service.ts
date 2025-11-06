@@ -184,8 +184,18 @@ export class FoodItemService {
             // Validate if nutrition data is being updated
             if (dto.calories || dto.proteinG || dto.carbsG || dto.fatsG) {
                 const existing = await this.prisma.foodItem.findUnique({ where: { id } });
-                const updated = { ...existing, ...dto };
-                this.validateNutritionData(updated as any);
+                if (!existing) {
+                    throw new FoodItemNotFoundException(id);
+                }
+
+                // Build validation object with proper types
+                const validationData = {
+                    calories: dto.calories ?? existing.calories,
+                    proteinG: dto.proteinG ?? decimalToNumber(existing.proteinG),
+                    carbsG: dto.carbsG ?? decimalToNumber(existing.carbsG),
+                    fatsG: dto.fatsG ?? decimalToNumber(existing.fatsG),
+                };
+                this.validateNutritionData(validationData);
             }
 
             this.logger.log(`Updating food item ${id}`);

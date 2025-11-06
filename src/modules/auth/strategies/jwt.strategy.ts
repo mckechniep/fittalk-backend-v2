@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -31,18 +31,14 @@ export interface AuthenticatedUser {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
     const supabaseUrl = configService.get<string>('supabase.url');
     const jwtSecret = configService.get<string>('supabase.jwtSecret');
-
-    console.log('🔧 JWT Strategy Initialization:');
-    console.log('  SUPABASE_URL:', supabaseUrl);
-    console.log('  JWT_SECRET:', jwtSecret ? '✅ Set' : '❌ Missing');
-    console.log('  Expected issuer:', `${supabaseUrl}/auth/v1`);
-    console.log('  Expected audience:', 'authenticated');
 
     if (!jwtSecret) {
       throw new Error('SUPABASE_JWT_SECRET environment variable is required');
@@ -55,20 +51,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: jwtSecret, // Use secret instead of JWKS
+      secretOrKey: jwtSecret,
       issuer: `${supabaseUrl}/auth/v1`,
       audience: 'authenticated',
-      algorithms: ['HS256'], // Supabase uses HS256 with JWT secret
+      algorithms: ['HS256'],
     });
 
-    console.log('✅ JWT Strategy initialized successfully');
+    this.logger.log('JWT Strategy initialized successfully');
   }
 
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
-    console.log('🔑 JWT Validation started for user:', payload.sub);
+    this.logger.debug(`JWT validation started for user: ${payload.sub}`);
 
     if (payload.exp && Date.now() >= payload.exp * 1000) {
-      console.error('❌ Token expired');
+      this.logger.warn(`Token expired for user: ${payload.sub}`);
       throw new UnauthorizedException('Token expired');
     }
 
@@ -88,7 +84,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user) {
-      console.log('  👤 Creating new user');
+      this.logger.log(`Creating new user: ${payload.sub}`);
       user = await this.prisma.user.create({
         data: {
           id: payload.sub,
@@ -112,7 +108,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         },
       });
     } else {
-      console.log('  ✅ Existing user found:', user.email);
+      this.logger.debug(`Existing user found: ${user.email}`);
     }
 
     // THEN: Handle session (now user definitely exists)
@@ -122,7 +118,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
 
       if (!session) {
-        console.log('  📝 Creating new session');
+        this.logger.debug(`Creating new session for user: ${payload.sub}`);
         await this.prisma.session.create({
           data: {
             userId: payload.sub, // Now this userId exists!
@@ -133,11 +129,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       } else if (session.expiresAt < new Date()) {
         throw new UnauthorizedException('Session expired');
       } else {
-        console.log('  ✅ Session valid');
+        this.logger.debug('Session valid');
       }
     }
 
-    console.log('✅ JWT validation successful');
+    this.logger.debug('JWT validation successful');
 
     return {
       id: user.id,

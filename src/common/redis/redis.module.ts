@@ -1,5 +1,5 @@
 // common/redis/redis.module.ts
-import { Global, Module, Inject } from '@nestjs/common';
+import { Global, Module, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from 'redis';
 import type { RedisClientType } from 'redis';
@@ -48,6 +48,7 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
       useFactory: async (
         configService: ConfigService,
       ): Promise<RedisClientType> => {
+        const logger = new Logger('RedisModule');
         const redisUrl = configService.get<string>('redis.url');
 
         if (!redisUrl) {
@@ -56,52 +57,45 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 
         const client = createClient({
           url: redisUrl,
-          // Connection options
           socket: {
             reconnectStrategy: (retries) => {
-              // Exponential backoff: 100ms, 200ms, 400ms, 800ms, max 3000ms
               const delay = Math.min(100 * Math.pow(2, retries), 3000);
-              console.log(
-                `Redis reconnecting (attempt ${retries + 1}), delay: ${delay}ms`,
-              );
+              logger.warn(`Redis reconnecting (attempt ${retries + 1}), delay: ${delay}ms`);
               return delay;
             },
-            connectTimeout: 10000, // 10 second connection timeout
+            connectTimeout: 10000,
           },
         }) as RedisClientType;
 
-        // Error handling
         client.on('error', (err) => {
-          console.error('Redis Client Error:', err);
+          logger.error('Redis Client Error', err);
         });
 
         client.on('connect', () => {
-          console.log('Redis client connected');
+          logger.log('Redis client connected');
         });
 
         client.on('ready', () => {
-          console.log('Redis client ready');
+          logger.log('Redis client ready');
         });
 
         client.on('reconnecting', () => {
-          console.log('Redis client reconnecting...');
+          logger.warn('Redis client reconnecting...');
         });
 
         client.on('end', () => {
-          console.log('Redis client connection closed');
+          logger.log('Redis client connection closed');
         });
 
-        // Connect to Redis
         try {
           await client.connect();
-          console.log('Redis connection established successfully');
+          logger.log('Redis connection established successfully');
 
-          // Test connectivity
           await client.ping();
-          console.log('Redis connectivity test passed');
+          logger.log('Redis connectivity test passed');
         } catch (error) {
-          console.error('Failed to connect to Redis:', error);
-          throw error; // Fail fast - app should not start without Redis
+          logger.error('Failed to connect to Redis', error);
+          throw error;
         }
 
         return client;
@@ -112,18 +106,16 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
   exports: [REDIS_CLIENT],
 })
 export class RedisModule {
+  private readonly logger = new Logger(RedisModule.name);
+
   constructor(@Inject(REDIS_CLIENT) private readonly redis: RedisClientType) {}
 
-  /**
-   * Disconnect from Redis on module destroy.
-   * Ensures clean shutdown.
-   */
   async onModuleDestroy() {
     try {
       await this.redis.disconnect();
-      console.log('Redis client disconnected');
+      this.logger.log('Redis client disconnected');
     } catch (error) {
-      console.error('Error disconnecting Redis:', error);
+      this.logger.error('Error disconnecting Redis', error);
     }
   }
 }

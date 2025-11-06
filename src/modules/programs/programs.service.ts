@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { handlePrismaError } from '../../common/utils/prisma-error.handler';
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
 import { UpdateProgramStatusDto } from './dto/update-program-status.dto';
@@ -31,6 +32,8 @@ import { PlanStatus } from '@prisma/client';
  */
 @Injectable()
 export class ProgramsService {
+  private readonly logger = new Logger(ProgramsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -40,157 +43,211 @@ export class ProgramsService {
 
   /**
    * Create a new workout program
-   * 
+   *
    * Flow:
    * 1. Create program with status='draft'
    * 2. Days and items added via separate endpoints
-   * 
+   *
    * Default status: draft (user activates when ready)
    * Default weeks: 4 if not specified
    */
   async createProgram(userId: string, dto: CreateProgramDto) {
-    const program = await this.prisma.workoutPlan.create({
-      data: {
-        userId,
-        title: dto.title,
-        weeks: dto.weeks || 4,
-        status: PlanStatus.draft,
-        sourceJson: dto.sourceJson ? (dto.sourceJson as any) : undefined,
-      },
-    });
+    try {
+      this.logger.log(`Creating program for user ${userId}: ${dto.title}`);
 
-    return program;
+      const program = await this.prisma.workoutPlan.create({
+        data: {
+          userId,
+          title: dto.title,
+          weeks: dto.weeks || 4,
+          status: PlanStatus.draft,
+          sourceJson: dto.sourceJson ?? Prisma.DbNull,
+        },
+      });
+
+      this.logger.log(`Successfully created program ${program.id}`);
+      return program;
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'create program');
+    }
   }
 
   /**
    * Get all programs for a user
-   * 
+   *
    * Optional status filter (e.g., only show active programs)
    * Ordered by creation date (newest first)
    * Includes count of days for quick overview
    */
   async getUserPrograms(userId: string, status?: PlanStatus) {
-    return this.prisma.workoutPlan.findMany({
-      where: {
-        userId,
-        ...(status && { status }),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { days: true },
+    try {
+      return this.prisma.workoutPlan.findMany({
+        where: {
+          userId,
+          ...(status && { status }),
         },
-      },
-    });
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { days: true },
+          },
+        },
+      });
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'get user programs');
+    }
   }
 
   /**
    * Get a specific program by ID with full details
-   * 
+   *
    * Returns complete hierarchy: Program → Days → Items → Exercises
-   * 
+   *
    * Flow:
    * 1. Find program
    * 2. Verify ownership
    * 3. Include all nested data (days, items, exercise details)
    */
   async getProgramById(userId: string, programId: string) {
-    const program = await this.prisma.workoutPlan.findUnique({
-      where: { id: programId },
-      include: {
-        days: {
-          orderBy: [
-            { weekNumber: 'asc' },
-            { dayNumber: 'asc' },
-          ],
-          include: {
-            items: {
-              orderBy: { order: 'asc' },
-              include: {
-                exercise: {
-                  select: {
-                    id: true,
-                    slug: true,
-                    name: true,
-                    primaryGroup: true,
-                    equipment: true,
+    try {
+      const program = await this.prisma.workoutPlan.findUnique({
+        where: { id: programId },
+        include: {
+          days: {
+            orderBy: [
+              { weekNumber: 'asc' },
+              { dayNumber: 'asc' },
+            ],
+            include: {
+              items: {
+                orderBy: { order: 'asc' },
+                include: {
+                  exercise: {
+                    select: {
+                      id: true,
+                      slug: true,
+                      name: true,
+                      primaryGroup: true,
+                      equipment: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    if (!program) {
-      throw new NotFoundException('Program not found');
+      if (!program) {
+        throw new NotFoundException({
+          message: 'Program not found',
+          error: 'ProgramNotFound',
+        });
+      }
+
+      if (program.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'You do not have access to this program',
+          error: 'ProgramAccessDenied',
+        });
+      }
+
+      return program;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'get program by id');
     }
-
-    if (program.userId !== userId) {
-      throw new ForbiddenException('You do not have access to this program');
-    }
-
-    return program;
   }
 
   /**
    * Update program details
-   * 
+   *
    * Only updates provided fields
    * Status updates use separate endpoint
    */
   async updateProgram(userId: string, programId: string, dto: UpdateProgramDto) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    const program = await this.prisma.workoutPlan.update({
-      where: { id: programId },
-      data: {
-        title: dto.title,
-        weeks: dto.weeks,
-        sourceJson: dto.sourceJson,
-      },
-    });
+      this.logger.log(`Updating program ${programId}`);
 
-    return program;
+      const program = await this.prisma.workoutPlan.update({
+        where: { id: programId },
+        data: {
+          title: dto.title,
+          weeks: dto.weeks,
+          sourceJson: dto.sourceJson,
+        },
+      });
+
+      this.logger.log(`Successfully updated program ${programId}`);
+      return program;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update program');
+    }
   }
 
   /**
    * Update program status
-   * 
+   *
    * Status transitions:
    * - draft → active (ready to use)
    * - active → archived (completed or deprecated)
    * - archived → active (reactivate old program)
    */
   async updateProgramStatus(userId: string, programId: string, dto: UpdateProgramStatusDto) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    const program = await this.prisma.workoutPlan.update({
-      where: { id: programId },
-      data: { status: dto.status },
-    });
+      this.logger.log(`Updating program status ${programId} to ${dto.status}`);
 
-    return program;
+      const program = await this.prisma.workoutPlan.update({
+        where: { id: programId },
+        data: { status: dto.status },
+      });
+
+      this.logger.log(`Successfully updated program status ${programId}`);
+      return program;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update program status');
+    }
   }
 
   /**
    * Delete a program
-   * 
+   *
    * Cascade delete: Removes all days and items (defined in Prisma schema)
    * Use with caution - no soft delete
    */
   async deleteProgram(userId: string, programId: string) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    await this.prisma.workoutPlan.delete({
-      where: { id: programId },
-    });
+      this.logger.log(`Deleting program ${programId}`);
 
-    return { message: 'Program deleted successfully' };
+      await this.prisma.workoutPlan.delete({
+        where: { id: programId },
+      });
+
+      this.logger.log(`Successfully deleted program ${programId}`);
+      return { message: 'Program deleted successfully' };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'delete program');
+    }
   }
 
   /**
@@ -233,7 +290,7 @@ export class ProgramsService {
             title: `${sourceProgram.title} (Copy)`,
             weeks: sourceProgram.weeks,
             status: PlanStatus.draft,
-            sourceJson: sourceProgram.sourceJson as any,
+            sourceJson: sourceProgram.sourceJson ?? Prisma.DbNull,
           },
         });
 
@@ -324,119 +381,156 @@ export class ProgramsService {
 
   /**
    * Add a workout day to a program
-   * 
+   *
    * Flow:
    * 1. Verify program ownership
    * 2. Check for duplicate (weekNumber + dayNumber) - Prisma enforces uniqueness
    * 3. Create day
-   * 
+   *
    * Note: No overlap validation (users may want multiple sessions per day)
    */
   async createWorkoutDay(userId: string, programId: string, dto: CreateWorkoutDayDto) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Validate weekNumber doesn't exceed program weeks
-    const program = await this.prisma.workoutPlan.findUnique({
-      where: { id: programId },
-      select: { weeks: true },
-    });
+      // Validate weekNumber doesn't exceed program weeks
+      const program = await this.prisma.workoutPlan.findUnique({
+        where: { id: programId },
+        select: { weeks: true },
+      });
 
-    if (dto.weekNumber > program!.weeks) {
-      throw new BadRequestException(
-        `Week number ${dto.weekNumber} exceeds program duration of ${program!.weeks} weeks`
-      );
-    }
+      if (dto.weekNumber > program!.weeks) {
+        throw new BadRequestException({
+          message: `Week number ${dto.weekNumber} exceeds program duration of ${program!.weeks} weeks`,
+          error: 'InvalidWeekNumber',
+        });
+      }
 
-    const day = await this.prisma.workoutDay.create({
-      data: {
-        planId: programId,
-        weekNumber: dto.weekNumber,
-        dayNumber: dto.dayNumber,
-        focus: dto.focus,
-        notes: dto.notes,
-      },
-      include: {
-        items: {
-          orderBy: { order: 'asc' },
-          include: {
-            exercise: {
-              select: {
-                id: true,
-                slug: true,
-                name: true,
-                primaryGroup: true,
-                equipment: true,
+      this.logger.log(`Creating workout day for program ${programId}: week ${dto.weekNumber}, day ${dto.dayNumber}`);
+
+      const day = await this.prisma.workoutDay.create({
+        data: {
+          planId: programId,
+          weekNumber: dto.weekNumber,
+          dayNumber: dto.dayNumber,
+          focus: dto.focus,
+          notes: dto.notes,
+        },
+        include: {
+          items: {
+            orderBy: { order: 'asc' },
+            include: {
+              exercise: {
+                select: {
+                  id: true,
+                  slug: true,
+                  name: true,
+                  primaryGroup: true,
+                  equipment: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    return day;
+      this.logger.log(`Successfully created workout day ${day.id}`);
+      return day;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException || error instanceof BadRequestException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'create workout day');
+    }
   }
 
   /**
    * Update a workout day
-   * 
+   *
    * Note: weekNumber and dayNumber are NOT updatable (would break uniqueness)
    * To move a day, delete and recreate
    */
   async updateWorkoutDay(userId: string, programId: string, dayId: string, dto: UpdateWorkoutDayDto) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Verify day belongs to program
-    const day = await this.prisma.workoutDay.findUnique({
-      where: { id: dayId },
-    });
+      // Verify day belongs to program
+      const day = await this.prisma.workoutDay.findUnique({
+        where: { id: dayId },
+      });
 
-    if (!day || day.planId !== programId) {
-      throw new NotFoundException('Workout day not found');
+      if (!day || day.planId !== programId) {
+        throw new NotFoundException({
+          message: 'Workout day not found',
+          error: 'WorkoutDayNotFound',
+        });
+      }
+
+      this.logger.log(`Updating workout day ${dayId}`);
+
+      const updatedDay = await this.prisma.workoutDay.update({
+        where: { id: dayId },
+        data: {
+          focus: dto.focus,
+          notes: dto.notes,
+        },
+      });
+
+      this.logger.log(`Successfully updated workout day ${dayId}`);
+      return updatedDay;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update workout day');
     }
-
-    const updatedDay = await this.prisma.workoutDay.update({
-      where: { id: dayId },
-      data: {
-        focus: dto.focus,
-        notes: dto.notes,
-      },
-    });
-
-    return updatedDay;
   }
 
   /**
    * Delete a workout day
-   * 
+   *
    * Cascade delete: Removes all items (defined in Prisma schema)
    */
   async deleteWorkoutDay(userId: string, programId: string, dayId: string) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Verify day belongs to program
-    const day = await this.prisma.workoutDay.findUnique({
-      where: { id: dayId },
-    });
+      // Verify day belongs to program
+      const day = await this.prisma.workoutDay.findUnique({
+        where: { id: dayId },
+      });
 
-    if (!day || day.planId !== programId) {
-      throw new NotFoundException('Workout day not found');
+      if (!day || day.planId !== programId) {
+        throw new NotFoundException({
+          message: 'Workout day not found',
+          error: 'WorkoutDayNotFound',
+        });
+      }
+
+      this.logger.log(`Deleting workout day ${dayId}`);
+
+      await this.prisma.workoutDay.delete({
+        where: { id: dayId },
+      });
+
+      this.logger.log(`Successfully deleted workout day ${dayId}`);
+      return { message: 'Workout day deleted successfully' };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'delete workout day');
     }
-
-    await this.prisma.workoutDay.delete({
-      where: { id: dayId },
-    });
-
-    return { message: 'Workout day deleted successfully' };
   }
 
   // ==================== WORKOUT ITEM CRUD ====================
 
   /**
    * Add an exercise item to a workout day
-   * 
+   *
    * Flow:
    * 1. Verify program ownership
    * 2. Verify day exists and belongs to program
@@ -444,58 +538,74 @@ export class ProgramsService {
    * 4. Create item
    */
   async createWorkoutItem(userId: string, programId: string, dayId: string, dto: CreateWorkoutItemDto) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Verify day belongs to program
-    const day = await this.prisma.workoutDay.findUnique({
-      where: { id: dayId },
-    });
+      // Verify day belongs to program
+      const day = await this.prisma.workoutDay.findUnique({
+        where: { id: dayId },
+      });
 
-    if (!day || day.planId !== programId) {
-      throw new NotFoundException('Workout day not found');
-    }
+      if (!day || day.planId !== programId) {
+        throw new NotFoundException({
+          message: 'Workout day not found',
+          error: 'WorkoutDayNotFound',
+        });
+      }
 
-    // Verify exercise exists
-    const exercise = await this.prisma.exercise.findUnique({
-      where: { id: dto.exerciseId },
-    });
+      // Verify exercise exists
+      const exercise = await this.prisma.exercise.findUnique({
+        where: { id: dto.exerciseId },
+      });
 
-    if (!exercise) {
-      throw new NotFoundException('Exercise not found');
-    }
+      if (!exercise) {
+        throw new NotFoundException({
+          message: 'Exercise not found',
+          error: 'ExerciseNotFound',
+        });
+      }
 
-    const item = await this.prisma.workoutItem.create({
-      data: {
-        dayId,
-        order: dto.order,
-        exerciseId: dto.exerciseId,
-        targetSets: dto.targetSets,
-        targetReps: dto.targetReps,
-        targetRir: dto.targetRir,
-        targetWeight: dto.targetWeight,
-        restSec: dto.restSeconds,
-        notes: dto.notes,
-      },
-      include: {
-        exercise: {
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-            primaryGroup: true,
-            equipment: true,
+      this.logger.log(`Creating workout item for day ${dayId}: exercise ${dto.exerciseId}`);
+
+      const item = await this.prisma.workoutItem.create({
+        data: {
+          dayId,
+          order: dto.order,
+          exerciseId: dto.exerciseId,
+          targetSets: dto.targetSets,
+          targetReps: dto.targetReps,
+          targetRir: dto.targetRir,
+          targetWeight: dto.targetWeight,
+          restSec: dto.restSeconds,
+          notes: dto.notes,
+        },
+        include: {
+          exercise: {
+            select: {
+              id: true,
+              slug: true,
+              name: true,
+              primaryGroup: true,
+              equipment: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    return item;
+      this.logger.log(`Successfully created workout item ${item.id}`);
+      return item;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'create workout item');
+    }
   }
 
   /**
    * Update a workout item
-   * 
+   *
    * Note: exerciseId is NOT updatable (would change the exercise entirely)
    * To change exercise, delete item and create new one
    */
@@ -506,83 +616,115 @@ export class ProgramsService {
     itemId: string,
     dto: UpdateWorkoutItemDto,
   ) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Verify day belongs to program
-    const day = await this.prisma.workoutDay.findUnique({
-      where: { id: dayId },
-    });
+      // Verify day belongs to program
+      const day = await this.prisma.workoutDay.findUnique({
+        where: { id: dayId },
+      });
 
-    if (!day || day.planId !== programId) {
-      throw new NotFoundException('Workout day not found');
-    }
+      if (!day || day.planId !== programId) {
+        throw new NotFoundException({
+          message: 'Workout day not found',
+          error: 'WorkoutDayNotFound',
+        });
+      }
 
-    // Verify item belongs to day
-    const item = await this.prisma.workoutItem.findUnique({
-      where: { id: itemId },
-    });
+      // Verify item belongs to day
+      const item = await this.prisma.workoutItem.findUnique({
+        where: { id: itemId },
+      });
 
-    if (!item || item.dayId !== dayId) {
-      throw new NotFoundException('Workout item not found');
-    }
+      if (!item || item.dayId !== dayId) {
+        throw new NotFoundException({
+          message: 'Workout item not found',
+          error: 'WorkoutItemNotFound',
+        });
+      }
 
-    const updatedItem = await this.prisma.workoutItem.update({
-      where: { id: itemId },
-      data: {
-        order: dto.order,
-        targetSets: dto.targetSets,
-        targetReps: dto.targetReps,
-        targetRir: dto.targetRir,
-        targetWeight: dto.targetWeight,
-        restSec: dto.restSeconds,
-        notes: dto.notes,
-      },
-      include: {
-        exercise: {
-          select: {
-            id: true,
-            slug: true,
-            name: true,
-            primaryGroup: true,
-            equipment: true,
+      this.logger.log(`Updating workout item ${itemId}`);
+
+      const updatedItem = await this.prisma.workoutItem.update({
+        where: { id: itemId },
+        data: {
+          order: dto.order,
+          targetSets: dto.targetSets,
+          targetReps: dto.targetReps,
+          targetRir: dto.targetRir,
+          targetWeight: dto.targetWeight,
+          restSec: dto.restSeconds,
+          notes: dto.notes,
+        },
+        include: {
+          exercise: {
+            select: {
+              id: true,
+              slug: true,
+              name: true,
+              primaryGroup: true,
+              equipment: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    return updatedItem;
+      this.logger.log(`Successfully updated workout item ${itemId}`);
+      return updatedItem;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update workout item');
+    }
   }
 
   /**
    * Delete a workout item
    */
   async deleteWorkoutItem(userId: string, programId: string, dayId: string, itemId: string) {
-    // Verify ownership
-    await this.getProgramById(userId, programId);
+    try {
+      // Verify ownership
+      await this.getProgramById(userId, programId);
 
-    // Verify day belongs to program
-    const day = await this.prisma.workoutDay.findUnique({
-      where: { id: dayId },
-    });
+      // Verify day belongs to program
+      const day = await this.prisma.workoutDay.findUnique({
+        where: { id: dayId },
+      });
 
-    if (!day || day.planId !== programId) {
-      throw new NotFoundException('Workout day not found');
+      if (!day || day.planId !== programId) {
+        throw new NotFoundException({
+          message: 'Workout day not found',
+          error: 'WorkoutDayNotFound',
+        });
+      }
+
+      // Verify item belongs to day
+      const item = await this.prisma.workoutItem.findUnique({
+        where: { id: itemId },
+      });
+
+      if (!item || item.dayId !== dayId) {
+        throw new NotFoundException({
+          message: 'Workout item not found',
+          error: 'WorkoutItemNotFound',
+        });
+      }
+
+      this.logger.log(`Deleting workout item ${itemId}`);
+
+      await this.prisma.workoutItem.delete({
+        where: { id: itemId },
+      });
+
+      this.logger.log(`Successfully deleted workout item ${itemId}`);
+      return { message: 'Workout item deleted successfully' };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'delete workout item');
     }
-
-    // Verify item belongs to day
-    const item = await this.prisma.workoutItem.findUnique({
-      where: { id: itemId },
-    });
-
-    if (!item || item.dayId !== dayId) {
-      throw new NotFoundException('Workout item not found');
-    }
-
-    await this.prisma.workoutItem.delete({
-      where: { id: itemId },
-    });
-
-    return { message: 'Workout item deleted successfully' };
   }
 }

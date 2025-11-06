@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { handlePrismaError } from '../../common/utils/prisma-error.handler';
 import { plainToInstance } from 'class-transformer';
 import {
     CreateWorkoutLogDto,
@@ -215,31 +216,42 @@ export class WorkoutLoggingService {
         logId: string,
         userId: string,
     ): Promise<WorkoutLogResponseDto> {
-        const log = await this.prisma.workoutLog.findUnique({
-            where: { id: logId },
-            include: {
-                sets: {
-                    orderBy: { setNumber: 'asc' },
+        try {
+            const log = await this.prisma.workoutLog.findUnique({
+                where: { id: logId },
+                include: {
+                    sets: {
+                        orderBy: { setNumber: 'asc' },
+                    },
+                    exercise: true,
                 },
-                exercise: true,
-            },
-        });
+            });
 
-        if (!log) {
-            throw new NotFoundException(`Workout log ${logId} not found`);
+            if (!log) {
+                throw new NotFoundException({
+                    message: `Workout log ${logId} not found`,
+                    error: 'WorkoutLogNotFound',
+                });
+            }
+
+            // Ownership check
+            if (log.userId !== userId) {
+                this.logger.warn(
+                    `User ${userId} attempted to access log ${logId} owned by ${log.userId}`,
+                );
+                throw new ForbiddenException({
+                    message: 'You do not have access to this workout log',
+                    error: 'WorkoutLogAccessDenied',
+                });
+            }
+
+            return this.transformToResponseDto(log);
+        } catch (error) {
+            if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+                throw error;
+            }
+            handlePrismaError(error, this.logger, 'get workout log');
         }
-
-        // Ownership check
-        if (log.userId !== userId) {
-            this.logger.warn(
-                `User ${userId} attempted to access log ${logId} owned by ${log.userId}`,
-            );
-            throw new ForbiddenException(
-                'You do not have access to this workout log',
-            );
-        }
-
-        return this.transformToResponseDto(log);
     }
 
     /**
@@ -260,56 +272,60 @@ export class WorkoutLoggingService {
         userId: string,
         query: GetWorkoutLogsQueryDto,
     ): Promise<WorkoutLogHistoryResponseDto> {
-        const page = query.page || 1;
-        const limit = Math.min(query.limit || 20, 100);
-        const skip = (page - 1) * limit;
+        try {
+            const page = query.page || 1;
+            const limit = Math.min(query.limit || 20, 100);
+            const skip = (page - 1) * limit;
 
-        // Build where clause
-        const where: any = {
-            userId,
-            ...(query.exerciseId && { exerciseId: query.exerciseId }),
-            ...(query.planId && { planId: query.planId }),
-        };
+            // Build where clause
+            const where: any = {
+                userId,
+                ...(query.exerciseId && { exerciseId: query.exerciseId }),
+                ...(query.planId && { planId: query.planId }),
+            };
 
-        // Date range filtering
-        if (query.startDate || query.endDate) {
-            where.performedAt = {};
-            if (query.startDate) {
-                where.performedAt.gte = new Date(query.startDate);
+            // Date range filtering
+            if (query.startDate || query.endDate) {
+                where.performedAt = {};
+                if (query.startDate) {
+                    where.performedAt.gte = new Date(query.startDate);
+                }
+                if (query.endDate) {
+                    where.performedAt.lte = new Date(query.endDate);
+                }
             }
-            if (query.endDate) {
-                where.performedAt.lte = new Date(query.endDate);
-            }
-        }
 
-        // Fetch logs and count in parallel
-        const [logs, total] = await Promise.all([
-            this.prisma.workoutLog.findMany({
-                where,
-                include: {
-                    sets: {
-                        orderBy: { setNumber: 'asc' },
+            // Fetch logs and count in parallel
+            const [logs, total] = await Promise.all([
+                this.prisma.workoutLog.findMany({
+                    where,
+                    include: {
+                        sets: {
+                            orderBy: { setNumber: 'asc' },
+                        },
+                        exercise: true,
                     },
-                    exercise: true,
-                },
-                orderBy: {
-                    performedAt: 'desc',
-                },
-                skip,
-                take: limit,
-            }),
-            this.prisma.workoutLog.count({ where }),
-        ]);
+                    orderBy: {
+                        performedAt: 'desc',
+                    },
+                    skip,
+                    take: limit,
+                }),
+                this.prisma.workoutLog.count({ where }),
+            ]);
 
-        return {
-            logs: logs.map((log) => this.transformToResponseDto(log)),
-            pagination: {
-                page,
-                limit,
-                total,
-                totalPages: Math.ceil(total / limit),
-            },
-        };
+            return {
+                logs: logs.map((log) => this.transformToResponseDto(log)),
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                },
+            };
+        } catch (error) {
+            handlePrismaError(error, this.logger, 'get user workout logs');
+        }
     }
 
     /**
@@ -426,14 +442,23 @@ export class WorkoutLoggingService {
      * @param userId - Authenticated user ID
      */
     async deleteWorkoutLog(logId: string, userId: string): Promise<void> {
-        // Verify log exists and ownership
-        await this.getLogOrThrow(logId, userId);
+        try {
+            // Verify log exists and ownership
+            await this.getLogOrThrow(logId, userId);
 
-        await this.prisma.workoutLog.delete({
-            where: { id: logId },
-        });
+            this.logger.log(`Deleting workout log ${logId}`);
 
-        this.logger.log(`Deleted workout log ${logId}`);
+            await this.prisma.workoutLog.delete({
+                where: { id: logId },
+            });
+
+            this.logger.log(`Successfully deleted workout log ${logId}`);
+        } catch (error) {
+            if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+                throw error;
+            }
+            handlePrismaError(error, this.logger, 'delete workout log');
+        }
     }
 
     // ==================== PRIVATE HELPER METHODS ====================
@@ -443,21 +468,32 @@ export class WorkoutLoggingService {
      * Helper to reduce boilerplate.
      */
     private async getLogOrThrow(logId: string, userId: string) {
-        const log = await this.prisma.workoutLog.findUnique({
-            where: { id: logId },
-        });
+        try {
+            const log = await this.prisma.workoutLog.findUnique({
+                where: { id: logId },
+            });
 
-        if (!log) {
-            throw new NotFoundException(`Workout log ${logId} not found`);
+            if (!log) {
+                throw new NotFoundException({
+                    message: `Workout log ${logId} not found`,
+                    error: 'WorkoutLogNotFound',
+                });
+            }
+
+            if (log.userId !== userId) {
+                throw new ForbiddenException({
+                    message: 'You do not have access to this workout log',
+                    error: 'WorkoutLogAccessDenied',
+                });
+            }
+
+            return log;
+        } catch (error) {
+            if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+                throw error;
+            }
+            handlePrismaError(error, this.logger, 'get log or throw');
         }
-
-        if (log.userId !== userId) {
-            throw new ForbiddenException(
-                'You do not have access to this workout log',
-            );
-        }
-
-        return log;
     }
 
     /**

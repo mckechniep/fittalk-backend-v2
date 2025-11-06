@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
@@ -7,6 +7,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
   constructor(private configService: ConfigService) {
     super({
       datasources: {
@@ -63,7 +65,7 @@ export class PrismaService
             ),
           );
         } catch (error) {
-          console.log({ error });
+          this.logger.error(`Failed to truncate table ${tablename}`, error);
         }
       }
     }
@@ -73,7 +75,7 @@ export class PrismaService
     try {
       await this.$transaction(transactions);
     } catch (error) {
-      console.log({ error });
+      this.logger.error('Failed to clean database', error);
     }
   }
 }

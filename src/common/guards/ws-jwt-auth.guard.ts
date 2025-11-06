@@ -4,6 +4,17 @@ import { Socket } from 'socket.io';
 import { ConfigService } from '@nestjs/config';
 
 /**
+ * Authenticated Socket with user data
+ */
+export interface AuthenticatedSocket extends Socket {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+  };
+}
+
+/**
  * WebSocket JWT Authentication Guard
  *
  * Validates JWT tokens sent via WebSocket handshake auth.
@@ -43,7 +54,7 @@ export class WsJwtAuthGuard implements CanActivate {
       }
 
       // Attach user to socket for use in handlers
-      (client as any).user = user;
+      (client as AuthenticatedSocket).user = user;
 
       this.logger.log(`WebSocket authenticated: ${client.id} (user: ${user.id})`);
 

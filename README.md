@@ -173,6 +173,157 @@ Back-End-FitTalk/
 └── package.json
 ```
 
+## Architecture Overview
+
+### Error Handling & Logging
+
+The application implements production-ready error handling with comprehensive logging across all services. This ensures reliable operations, consistent error responses, and complete audit trails.
+
+#### Centralized Error Handler
+
+Location: [src/common/utils/prisma-error.handler.ts](src/common/utils/prisma-error.handler.ts)
+
+All database operations use a centralized error handler that:
+- Maps Prisma errors to appropriate HTTP exceptions (400, 404, 409, 500)
+- Provides consistent error response format: `{message: string, error: string, details?: any}`
+- Logs all errors with context for debugging
+- Handles edge cases (validation errors, connection errors, unknown errors)
+
+Example Prisma error mappings:
+- P2002 (unique constraint) maps to 409 Conflict
+- P2025 (record not found) maps to 404 Not Found
+- P2003 (foreign key constraint) maps to 400 Bad Request
+
+#### Standardized Service Pattern
+
+All service methods follow this pattern:
+
+```typescript
+async methodName(userId: string, data: Dto) {
+  try {
+    this.logger.log(`Starting operation: ${context}`);
+
+    // Business logic and database operations
+    const result = await this.prisma.model.operation(...);
+
+    this.logger.log(`Successfully completed operation`);
+    return result;
+  } catch (error) {
+    // Re-throw custom exceptions (NotFoundException, ForbiddenException, etc.)
+    if (error instanceof NotFoundException) {
+      throw error;
+    }
+    // Handle all Prisma errors centrally
+    handlePrismaError(error, this.logger, 'operation description');
+  }
+}
+```
+
+#### Services with Standardized Error Handling
+
+The following services have been updated with comprehensive error handling:
+
+1. **Authentication & User Management** ([auth.service.ts](src/modules/auth/auth.service.ts))
+   - User profile operations
+   - Session management
+   - Device registration and management
+   - 10 methods with full error handling
+
+2. **Fitness Goals** ([goals.service.ts](src/modules/goals/goals.service.ts))
+   - Goal CRUD operations
+   - Goal status transitions
+   - 6 methods with full error handling
+
+3. **Workout Programs** ([programs.service.ts](src/modules/programs/programs.service.ts))
+   - Program, day, and item management
+   - Program cloning with deep copy
+   - 14 methods with full error handling
+
+4. **Workout Logging** ([workout-logging.service.ts](src/modules/workout-logging/workout-logging.service.ts))
+   - Workout log creation with sets
+   - Historical queries with pagination
+   - Transaction-based updates
+   - 5 methods with full error handling
+
+5. **Workout Scheduling** ([scheduling.service.ts](src/modules/workouts/scheduling/scheduling.service.ts))
+   - Week schedule generation with backtracking algorithm
+   - Distributed lock management for concurrent operations
+   - 7 methods with full error handling
+
+6. **Live Workout Sessions** ([live.service.ts](src/modules/workouts/live/live.service.ts))
+   - Real-time session management
+   - Redis + Prisma coordination
+   - Differentiated error handling for critical vs non-critical Redis operations
+   - 9 methods with full error handling
+
+7. **Session State Machine** ([session-state.service.ts](src/modules/workouts/live/session-state.service.ts))
+   - Finite state machine for workout states
+   - Redis-backed state persistence
+   - TTL management and cleanup
+   - 11 methods with full error handling
+
+8. **Nutrition Module** (5 services)
+   - Already implements sophisticated error handling with custom domain exceptions
+   - Detailed Prisma error code handling
+   - No changes required
+
+9. **Consultation Module** ([consultation.service.ts](src/modules/consultation/consultation.service.ts))
+   - Already implements comprehensive error handling with transactions
+   - No changes required
+
+#### Redis Error Handling Strategy
+
+Services that use Redis (live sessions, scheduling locks) implement a differentiated error handling strategy:
+
+**Critical Redis Operations** (session state initialization):
+```typescript
+try {
+  await this.sessionState.initializeState(session.id);
+} catch (redisError) {
+  this.logger.error(`Redis error: ${context}`, redisError);
+  throw new InternalServerErrorException({
+    message: 'Failed to initialize session state',
+    error: 'RedisError',
+  });
+}
+```
+
+**Non-Critical Redis Operations** (metrics, tracking):
+```typescript
+try {
+  await this.redis.sAdd(this.ACTIVE_SESSIONS_KEY, session.id);
+} catch (redisError) {
+  this.logger.error(`Redis error: ${context}`, redisError);
+  // Log but continue - non-critical operation
+}
+```
+
+This ensures the application remains operational even during partial Redis failures.
+
+#### Logging & Audit Trail
+
+All services implement structured logging:
+- Operation start and completion logs
+- Security audit logs (ownership verification, access attempts)
+- Error logs with full context and stack traces
+- Configurable log levels (debug, info, warn, error)
+
+Example audit trail for a workout log creation:
+```
+[INFO] Creating workout log for user abc123
+[INFO] Validated plan/day/item references
+[INFO] Successfully created workout log xyz789
+```
+
+#### Benefits
+
+1. **Consistent Error Responses**: All endpoints return standardized error format
+2. **Complete Audit Trail**: All operations logged with context
+3. **Easier Debugging**: Centralized error handling with detailed logging
+4. **Security**: Sensitive errors (like database constraints) never exposed to clients
+5. **Reliability**: Graceful degradation with differentiated error handling
+6. **Maintainability**: Single source of truth for error handling logic
+
 ## Development Workflow
 
 1. **Create a new feature branch**

@@ -10,6 +10,8 @@ import {
     IsNumber,
     Min,
     Max,
+    ArrayMinSize,
+    ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -58,9 +60,11 @@ export class CreateMealLogDto {
 
     /**
      * Array of food items in this meal.
-     * Must have at least one food item.
+     * Must have at least one food item, maximum 50 items.
      */
     @IsArray()
+    @ArrayMinSize(1)
+    @ArrayMaxSize(50)
     @ValidateNested({ each: true })
     @Type(() => CreateMealEntryDto)
     foods: CreateMealEntryDto[];

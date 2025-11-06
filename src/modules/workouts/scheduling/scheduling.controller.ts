@@ -12,6 +12,7 @@ import {
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { ScheduledWorkoutStatus } from '@prisma/client';
 import { SchedulingService } from './scheduling.service';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
@@ -142,7 +143,7 @@ export class SchedulingController {
       userId,
       query.weekStart,
       query.planId,
-      query.status as any, // GetScheduleQueryDto has string, service expects enum
+      query.status as ScheduledWorkoutStatus | undefined,
     );
   }
 
