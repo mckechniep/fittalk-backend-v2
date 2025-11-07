@@ -133,13 +133,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
     }
 
+    // Check if user is suspended
+    if (user.suspendedAt) {
+      this.logger.warn(`Access denied for suspended user: ${user.id}`);
+      throw new UnauthorizedException({
+        message: 'Account suspended',
+        error: 'AccountSuspended',
+        reason: user.suspendedReason,
+      });
+    }
+
     this.logger.debug('JWT validation successful');
 
+    // Use role from database (source of truth) instead of JWT
+    // JWT role is only used for backwards compatibility
     return {
       id: user.id,
       email: user.email,
       phone: user.phone || undefined,
-      role: payload.role,
+      role: user.role, // Use role from database
       sessionId: sessionId,
       metadata: {
         ...payload.user_metadata,

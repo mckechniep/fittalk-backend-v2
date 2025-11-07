@@ -14,8 +14,11 @@ import { ConsultationModule } from './modules/consultation/consultation.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLoggingModule } from './modules/workout-logging/workout-logging.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { SupportModule } from './modules/support/support.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { CustomThrottlerGuard } from './common/guards/throttler/custom-throttler.guard';
+import { RolesGuard } from './common/guards/roles.guard';
 import {
   appConfig,
   supabaseConfig,
@@ -81,6 +84,8 @@ import {
     WorkoutsModule, // Scheduling, live sessions (Phase 1: scheduling only)
     WorkoutLoggingModule, // Workout logging and performance tracking
     NutritionModule, // Nutrition tracking, meal logging, grocery lists
+    AdminModule, // Admin operations (user management, system stats, audit logs)
+    SupportModule, // Support tickets and customer service
   ],
   controllers: [AppController],
   providers: [
@@ -89,6 +94,11 @@ import {
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Global Roles Guard (must run after JWT Auth Guard)
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
     // Global Custom Throttler Guard (with logging and metrics)
     {

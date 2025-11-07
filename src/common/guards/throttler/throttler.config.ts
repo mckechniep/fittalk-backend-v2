@@ -246,6 +246,96 @@ export const RATE_LIMITS = {
    */
   WS_GET_STATE: { ttl: 60000, limit: 120 } as ThrottleConfig,
 
+  // ==================== ADMIN ENDPOINTS ====================
+  // Admin-specific rate limits for system management
+
+  /**
+   * Admin: Get all users (with pagination)
+   * View user list with filters
+   */
+  ADMIN_LIST_USERS: { ttl: 60000, limit: 30 } as ThrottleConfig,
+
+  /**
+   * Admin: Get user details
+   * View detailed user information
+   */
+  ADMIN_GET_USER: { ttl: 60000, limit: 100 } as ThrottleConfig,
+
+  /**
+   * Admin: Suspend user
+   * Restrict user access
+   */
+  ADMIN_SUSPEND_USER: { ttl: 60000, limit: 10 } as ThrottleConfig,
+
+  /**
+   * Admin: Unsuspend user
+   * Restore user access
+   */
+  ADMIN_UNSUSPEND_USER: { ttl: 60000, limit: 10 } as ThrottleConfig,
+
+  /**
+   * Admin: Update user role
+   * Promote/demote user roles
+   */
+  ADMIN_UPDATE_ROLE: { ttl: 60000, limit: 10 } as ThrottleConfig,
+
+  /**
+   * Admin: Delete user
+   * Permanently remove user
+   */
+  ADMIN_DELETE_USER: { ttl: 60000, limit: 5 } as ThrottleConfig,
+
+  /**
+   * Admin: Get system statistics
+   * View dashboard metrics
+   */
+  ADMIN_GET_STATS: { ttl: 60000, limit: 60 } as ThrottleConfig,
+
+  /**
+   * Admin: Search audit logs
+   * View system audit trails
+   */
+  ADMIN_AUDIT_LOGS: { ttl: 60000, limit: 50 } as ThrottleConfig,
+
+  // ==================== SUPPORT ENDPOINTS ====================
+  // Support team rate limits for ticket management
+
+  /**
+   * Support: List tickets
+   * View all support tickets
+   */
+  SUPPORT_LIST_TICKETS: { ttl: 60000, limit: 100 } as ThrottleConfig,
+
+  /**
+   * Support: Get ticket details
+   * View single ticket
+   */
+  SUPPORT_GET_TICKET: { ttl: 60000, limit: 100 } as ThrottleConfig,
+
+  /**
+   * Support: Create ticket (user-facing)
+   * Users creating new tickets
+   */
+  SUPPORT_CREATE_TICKET: { ttl: 60000, limit: 5 } as ThrottleConfig,
+
+  /**
+   * Support: Update ticket
+   * Change ticket status/priority/assignment
+   */
+  SUPPORT_UPDATE_TICKET: { ttl: 60000, limit: 30 } as ThrottleConfig,
+
+  /**
+   * Support: Add message to ticket
+   * Reply to ticket
+   */
+  SUPPORT_ADD_MESSAGE: { ttl: 60000, limit: 50 } as ThrottleConfig,
+
+  /**
+   * Support: Close ticket
+   * Mark ticket as closed
+   */
+  SUPPORT_CLOSE_TICKET: { ttl: 60000, limit: 30 } as ThrottleConfig,
+
 } as const;
 
 /**
