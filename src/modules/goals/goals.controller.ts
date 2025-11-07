@@ -21,6 +21,13 @@ import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 import { UpdateGoalStatusDto } from './dto/update-goal-status.dto';
 import { GoalStatus } from '@prisma/client';
+import {
+  StandardCreate,
+  FrequentRead,
+  ReadEndpoint,
+  StandardUpdate,
+  StandardDelete,
+} from '../../common/guards/throttler/throttler.decorators';
 
 /**
  * Goals Controller
@@ -55,6 +62,7 @@ export class GoalsController {
    * Returns: Created goal
    */
   @Post()
+  @StandardCreate() // 10/min - creating fitness goals
   @AuditEntity('UserGoal')
   @HttpCode(HttpStatus.CREATED)
   async createGoal(
@@ -72,6 +80,7 @@ export class GoalsController {
    * Returns: Array of goals
    */
   @Get()
+  @FrequentRead() // 100/min - checking goals list
   async getUserGoals(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: GoalStatus,
@@ -86,6 +95,7 @@ export class GoalsController {
    * Returns: Goal details
    */
   @Get(':id')
+  @ReadEndpoint() // 60/min - viewing goal details
   async getGoalById(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) goalId: string,
@@ -101,6 +111,7 @@ export class GoalsController {
    * Returns: Updated goal
    */
   @Patch(':id')
+  @StandardUpdate() // 15/min - updating goal details
   @AuditEntity('UserGoal')
   async updateGoal(
     @CurrentUser() user: AuthenticatedUser,
@@ -118,6 +129,7 @@ export class GoalsController {
    * Returns: Updated goal
    */
   @Patch(':id/status')
+  @StandardUpdate() // 15/min - updating goal status
   @AuditEntity('UserGoal')
   async updateGoalStatus(
     @CurrentUser() user: AuthenticatedUser,
@@ -134,6 +146,7 @@ export class GoalsController {
    * Returns: 204 No Content
    */
   @Delete(':id')
+  @StandardDelete() // 10/min - removing goals
   @AuditEntity('UserGoal')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteGoal(

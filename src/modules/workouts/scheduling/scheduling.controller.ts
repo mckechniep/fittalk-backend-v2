@@ -24,6 +24,11 @@ import {
   ScheduledWorkoutResponseDto,
   ScheduleWeekResponseDto,
 } from '../dtos/schedule-workout-response.dto';
+import {
+  ExpensiveOperation,
+  FrequentRead,
+  StandardDelete,
+} from '../../../common/guards/throttler/throttler.decorators';
 
 /**
  * Scheduling Controller
@@ -102,6 +107,7 @@ export class SchedulingController {
    * Status: 201 Created
    */
   @Post('week')
+  @ExpensiveOperation() // 5/min - computationally expensive scheduling algorithm
   @HttpCode(HttpStatus.CREATED)
   async generateWeekSchedule(
     @CurrentUser('id') userId: string,
@@ -135,6 +141,7 @@ export class SchedulingController {
    * Returns: ScheduledWorkoutResponseDto[]
    */
   @Get('week')
+  @FrequentRead() // 100/min - calendar view, frequent checks
   async getWeekSchedule(
     @CurrentUser('id') userId: string,
     @Query() query: GetScheduleQueryDto,
@@ -180,6 +187,7 @@ export class SchedulingController {
    * }
    */
   @Get('upcoming')
+  @FrequentRead() // 100/min - home screen display
   async getUpcomingWorkout(
     @CurrentUser('id') userId: string,
   ): Promise<ScheduledWorkoutResponseDto | null> {
@@ -219,6 +227,7 @@ export class SchedulingController {
    * This is soft-cancel (preserves record for audit).
    */
   @Delete(':id')
+  @StandardDelete() // 10/min - canceling scheduled workouts
   @HttpCode(HttpStatus.NO_CONTENT)
   async cancelScheduledWorkout(
     @CurrentUser('id') userId: string,

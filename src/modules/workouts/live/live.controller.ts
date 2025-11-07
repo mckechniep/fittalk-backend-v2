@@ -23,6 +23,13 @@ import {
   SessionStateSnapshotDto,
   LiveEventDto,
 } from './dtos';
+import {
+  LiveWorkoutEndpoint,
+  ReadEndpoint,
+  FrequentRead,
+  StandardUpdate,
+  StandardDelete,
+} from '../../../common/guards/throttler/throttler.decorators';
 
 /**
  * Live Session Controller
@@ -83,6 +90,7 @@ export class LiveController {
    * - Coach creates group workout session
    */
   @Post('sessions')
+  @LiveWorkoutEndpoint('create') // 15/min - creating workout sessions
   @HttpCode(HttpStatus.CREATED)
   async createSession(
     @CurrentUser('id') userId: string,
@@ -100,6 +108,7 @@ export class LiveController {
    * Used for session recovery and history viewing.
    */
   @Get('sessions/:id')
+  @ReadEndpoint() // 60/min - viewing session details
   async getSession(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -118,6 +127,7 @@ export class LiveController {
    * Returns array of active sessions (not ended).
    */
   @Get('sessions')
+  @FrequentRead() // 100/min - checking active sessions
   async getUserActiveSessions(
     @CurrentUser('id') userId: string,
   ): Promise<LiveSessionResponseDto[]> {
@@ -142,6 +152,7 @@ export class LiveController {
    * - Reschedule if not yet started
    */
   @Put('sessions/:id')
+  @StandardUpdate() // 15/min - updating session metadata
   async updateSession(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -169,6 +180,7 @@ export class LiveController {
    * - Manual session termination
    */
   @Post('sessions/:id/end')
+  @LiveWorkoutEndpoint('end') // 5/min - ending workout session
   @HttpCode(HttpStatus.OK)
   async endSession(
     @CurrentUser('id') userId: string,
@@ -190,6 +202,7 @@ export class LiveController {
    * NOTE: Cannot delete ended sessions (use soft delete if needed)
    */
   @Delete('sessions/:id')
+  @StandardDelete() // 10/min - canceling sessions
   @HttpCode(HttpStatus.NO_CONTENT)
   async cancelSession(
     @CurrentUser('id') userId: string,
@@ -215,6 +228,7 @@ export class LiveController {
    * - Debugging session state
    */
   @Get('sessions/:id/state')
+  @LiveWorkoutEndpoint('query') // 120/min - frequent state queries
   async getSessionState(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -240,6 +254,7 @@ export class LiveController {
    * - Track last activity time
    */
   @Post('sessions/:id/heartbeat')
+  @LiveWorkoutEndpoint('heartbeat') // 120/min - every 30-60 seconds
   @HttpCode(HttpStatus.NO_CONTENT)
   async recordHeartbeat(
     @CurrentUser('id') userId: string,
@@ -268,6 +283,7 @@ export class LiveController {
    * - HTTP fallback for WebSocket events
    */
   @Post('sessions/:id/events')
+  @LiveWorkoutEndpoint('event') // 20/min - recording custom events
   @HttpCode(HttpStatus.CREATED)
   async recordEvent(
     @CurrentUser('id') userId: string,
@@ -286,6 +302,7 @@ export class LiveController {
    * for reliability and testing.
    */
   @Post('sessions/:id/pause')
+  @LiveWorkoutEndpoint('state') // 30/min - state changes (pause/resume/start)
   @HttpCode(HttpStatus.OK)
   async pauseSession(
     @CurrentUser('id') userId: string,
@@ -303,6 +320,7 @@ export class LiveController {
    * Resume the session from pause (HTTP fallback).
    */
   @Post('sessions/:id/resume')
+  @LiveWorkoutEndpoint('state') // 30/min - state changes (pause/resume/start)
   @HttpCode(HttpStatus.OK)
   async resumeSession(
     @CurrentUser('id') userId: string,
@@ -326,6 +344,7 @@ export class LiveController {
    * }
    */
   @Post('sessions/:id/start-exercise')
+  @LiveWorkoutEndpoint('state') // 30/min - state changes (pause/resume/start)
   @HttpCode(HttpStatus.OK)
   async startExercise(
     @CurrentUser('id') userId: string,
@@ -353,6 +372,7 @@ export class LiveController {
    * }
    */
   @Post('sessions/:id/complete-set')
+  @LiveWorkoutEndpoint('set') // 50/min - completing sets during workout
   @HttpCode(HttpStatus.OK)
   async completeSet(
     @CurrentUser('id') userId: string,
@@ -371,6 +391,7 @@ export class LiveController {
    * End rest period and continue (HTTP fallback).
    */
   @Post('sessions/:id/end-rest')
+  @LiveWorkoutEndpoint('rest') // 50/min - ending rest periods
   @HttpCode(HttpStatus.OK)
   async endRest(
     @CurrentUser('id') userId: string,

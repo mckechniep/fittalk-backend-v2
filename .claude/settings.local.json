@@ -8,7 +8,9 @@
       "Bash(echo:*)",
       "Bash(for file in /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/{auth,consultation,workout-logging,programs}/*.service.ts)",
       "Bash(for file in /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/nutrition/services/*.service.ts)",
-      "Bash(do echo \"=== $file ===\")"
+      "Bash(do echo \"=== $file ===\")",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm remove:*)"
     ],
     "deny": [],
     "ask": []

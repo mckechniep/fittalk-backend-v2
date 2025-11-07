@@ -18,6 +18,11 @@ import {
   UpsertAvailabilityDto,
   AvailabilityWindowResponseDto,
 } from './dtos/availability-window.dto';
+import {
+  StandardCreate,
+  ReadEndpoint,
+  StandardDelete,
+} from '../../common/guards/throttler/throttler.decorators';
 
 /**
  * Availability Controller
@@ -82,6 +87,7 @@ export class AvailabilityController {
    * }
    */
   @Post()
+  @StandardCreate() // 10/min - updating weekly schedule
   @HttpCode(HttpStatus.CREATED)
   async upsertAvailability(
     @CurrentUser('id') userId: string,
@@ -125,6 +131,7 @@ export class AvailabilityController {
    * ]
    */
   @Get()
+  @ReadEndpoint() // 60/min - checking weekly schedule
   async getAvailability(
     @CurrentUser('id') userId: string,
   ): Promise<AvailabilityWindowResponseDto[]> {
@@ -158,6 +165,7 @@ export class AvailabilityController {
    * → 204 No Content
    */
   @Delete(':id')
+  @StandardDelete() // 10/min - removing time slots
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAvailabilityWindow(
     @CurrentUser('id') userId: string,

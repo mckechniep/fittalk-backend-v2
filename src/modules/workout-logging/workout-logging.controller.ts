@@ -24,6 +24,13 @@ import {
     WorkoutLogHistoryResponseDto,
     GetWorkoutLogsQueryDto,
 } from './dtos/workout-logging-response.dto';
+import {
+    HighFrequencyMutation,
+    ReadEndpoint,
+    FrequentRead,
+    StandardUpdate,
+    StandardDelete,
+} from '../../common/guards/throttler/throttler.decorators';
 
 /**
  * Workout Logging Controller
@@ -129,6 +136,7 @@ export class WorkoutLoggingController {
      * }
      */
     @Post()
+    @HighFrequencyMutation() // 30/min - logging during active workout
     @AuditEntity('WorkoutLog')
     @HttpCode(HttpStatus.CREATED)
     async createWorkoutLog(
@@ -164,6 +172,7 @@ export class WorkoutLoggingController {
      * GET /workout-logging/uuid-123
      */
     @Get(':id')
+    @ReadEndpoint() // 60/min - viewing workout details
     async getWorkoutLog(
         @CurrentUser('id') userId: string,
         @Param('id', ParseUUIDPipe) logId: string,
@@ -214,6 +223,7 @@ export class WorkoutLoggingController {
      * }
      */
     @Get()
+    @FrequentRead() // 100/min - browsing workout history
     async getUserWorkoutLogs(
         @CurrentUser('id') userId: string,
         @Query() query: GetWorkoutLogsQueryDto,
@@ -266,6 +276,7 @@ export class WorkoutLoggingController {
      * - 400 if setNumber invalid
      */
     @Patch(':id')
+    @StandardUpdate() // 15/min - correcting log mistakes
     @AuditEntity('WorkoutLog')
     async updateWorkoutLog(
         @CurrentUser('id') userId: string,
@@ -303,6 +314,7 @@ export class WorkoutLoggingController {
      * → 204 No Content
      */
     @Delete(':id')
+    @StandardDelete() // 10/min - removing accidental logs
     @AuditEntity('WorkoutLog')
     @HttpCode(HttpStatus.NO_CONTENT)
     async deleteWorkoutLog(
