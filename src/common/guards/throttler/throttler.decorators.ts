@@ -205,3 +205,105 @@ export const NoRateLimit = () => SkipThrottle();
  */
 export const ApplyRateLimit = (key: RateLimitKey) =>
   Throttle({ default: RATE_LIMITS[key] });
+
+// ==================== ADMIN ENDPOINT DECORATORS ====================
+
+/**
+ * Admin: List Users
+ * For paginated user listing endpoints
+ */
+export const AdminListUsers = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_LIST_USERS });
+
+/**
+ * Admin: Get User Details
+ * For viewing detailed user information
+ */
+export const AdminGetUser = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_GET_USER });
+
+/**
+ * Admin: Suspend User
+ * For suspending user accounts
+ */
+export const AdminSuspendUser = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_SUSPEND_USER });
+
+/**
+ * Admin: Unsuspend User
+ * For restoring suspended accounts
+ */
+export const AdminUnsuspendUser = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_UNSUSPEND_USER });
+
+/**
+ * Admin: Update User Role
+ * For changing user roles
+ */
+export const AdminUpdateRole = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_UPDATE_ROLE });
+
+/**
+ * Admin: Delete User
+ * For permanently deleting users
+ */
+export const AdminDeleteUser = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_DELETE_USER });
+
+/**
+ * Admin: Get Statistics
+ * For system dashboard and metrics
+ */
+export const AdminGetStats = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_GET_STATS });
+
+/**
+ * Admin: Audit Logs
+ * For viewing system audit trails
+ */
+export const AdminAuditLogs = () =>
+  Throttle({ default: RATE_LIMITS.ADMIN_AUDIT_LOGS });
+
+// ==================== SUPPORT ENDPOINT DECORATORS ====================
+
+/**
+ * Support: List Tickets
+ * For viewing all support tickets
+ */
+export const SupportListTickets = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_LIST_TICKETS });
+
+/**
+ * Support: Get Ticket
+ * For viewing single ticket details
+ */
+export const SupportGetTicket = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_GET_TICKET });
+
+/**
+ * Support: Create Ticket
+ * For users creating new support tickets
+ */
+export const SupportCreateTicket = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_CREATE_TICKET });
+
+/**
+ * Support: Update Ticket
+ * For modifying ticket status/priority/assignment
+ */
+export const SupportUpdateTicket = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_UPDATE_TICKET });
+
+/**
+ * Support: Add Message
+ * For replying to tickets
+ */
+export const SupportAddMessage = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_ADD_MESSAGE });
+
+/**
+ * Support: Close Ticket
+ * For closing resolved tickets
+ */
+export const SupportCloseTicket = () =>
+  Throttle({ default: RATE_LIMITS.SUPPORT_CLOSE_TICKET });

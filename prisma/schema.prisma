@@ -10,37 +10,46 @@ datasource db {
 }
 
 model User {
-  id                   String                @id @default(uuid())
-  email                String                @unique
-  phone                String?               @unique
-  passwordHash         String?               @db.VarChar(255)
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  aiMessages           AiMessage[]
-  aiRecommendations    AiRecommendation[]
-  auditLogs            AuditLog[]
-  accounts             AuthAccount[]
-  availabilities       AvailabilityWindow[]
-  bodyMetrics          BodyMetric[]
-  consultations        ConsultationSession[]
-  devices              Device[]
-  documents            Document[]
-  groceryLists         GroceryList[]
-  liveWorkoutSessions  LiveWorkoutSession[]
-  macroTargets         MacroTarget[]
-  mealLogs             MealLog[]
-  notifications        Notification[]
-  personalRecords      PersonalRecord[]
-  preferences          Preference?
-  profile              Profile?
-  scheduledWorkouts    ScheduledWorkout[]
-  sessions             Session[]
-  goals                UserGoal[]
-  userHealthConditions UserHealthCondition[]
-  workoutLogs          WorkoutLog[]
-  workoutPlans         WorkoutPlan[]
+  id                     String                @id @default(uuid())
+  email                  String                @unique
+  phone                  String?               @unique
+  passwordHash           String?               @db.VarChar(255)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  role                   Role                  @default(USER)
+  suspendedAt            DateTime?
+  suspendedBy            String?
+  suspendedReason        String?
+  aiMessages             AiMessage[]
+  aiRecommendations      AiRecommendation[]
+  auditLogs              AuditLog[]
+  accounts               AuthAccount[]
+  availabilities         AvailabilityWindow[]
+  bodyMetrics            BodyMetric[]
+  consultations          ConsultationSession[]
+  devices                Device[]
+  documents              Document[]
+  groceryLists           GroceryList[]
+  liveWorkoutSessions    LiveWorkoutSession[]
+  macroTargets           MacroTarget[]
+  mealLogs               MealLog[]
+  notifications          Notification[]
+  personalRecords        PersonalRecord[]
+  preferences            Preference?
+  profile                Profile?
+  scheduledWorkouts      ScheduledWorkout[]
+  sessions               Session[]
+  supportTicketsAssigned SupportTicket[]       @relation("TicketAssignee")
+  supportTicketsCreated  SupportTicket[]       @relation("TicketCreator")
+  ticketActivities       TicketActivity[]
+  ticketMessages         TicketMessage[]
+  goals                  UserGoal[]
+  userHealthConditions   UserHealthCondition[]
+  workoutLogs            WorkoutLog[]
+  workoutPlans           WorkoutPlan[]
 
   @@index([email])
+  @@index([role])
 }
 
 model AuthAccount {
@@ -465,9 +474,9 @@ model WorkoutItem {
   targetWeight Decimal?     @db.Decimal(6, 2)
   tempo        String?
   restSec      Int?
-  notes        String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  notes        String?
   day          WorkoutDay   @relation(fields: [dayId], references: [id], onDelete: Cascade)
   exercise     Exercise     @relation(fields: [exerciseId], references: [id])
   workoutLogs  WorkoutLog[]
@@ -620,6 +629,93 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([entityType, entityId])
   @@index([action])
+}
+
+model SupportTicket {
+  id           String           @id @default(uuid())
+  ticketNumber Int              @unique @default(autoincrement())
+  userId       String
+  assigneeId   String?
+  subject      String
+  category     TicketCategory
+  priority     TicketPriority   @default(MEDIUM)
+  status       TicketStatus     @default(OPEN)
+  tags         String[]         @default([])
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  assignee     User?            @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  user         User             @relation("TicketCreator", fields: [userId], references: [id], onDelete: Cascade)
+  activities   TicketActivity[]
+  messages     TicketMessage[]
+
+  @@index([userId])
+  @@index([assigneeId])
+  @@index([status, priority])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model TicketMessage {
+  id          String        @id @default(uuid())
+  ticketId    String
+  userId      String
+  message     String
+  isInternal  Boolean       @default(false)
+  attachments String[]      @default([])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@index([userId])
+}
+
+model TicketActivity {
+  id        String        @id @default(uuid())
+  ticketId  String
+  userId    String?
+  action    String
+  details   Json?
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User?         @relation(fields: [userId], references: [id])
+
+  @@index([ticketId, createdAt])
+}
+
+enum Role {
+  ADMIN
+  SUPPORT
+  USER
+}
+
+enum TicketCategory {
+  TECHNICAL_ISSUE
+  ACCOUNT_ISSUE
+  BILLING
+  FEATURE_REQUEST
+  BUG_REPORT
+  GENERAL_INQUIRY
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_USER
+  WAITING_FOR_SUPPORT
+  RESOLVED
+  CLOSED
 }
 
 enum Sex {
