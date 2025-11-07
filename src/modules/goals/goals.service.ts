@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 import { UpdateGoalStatusDto } from './dto/update-goal-status.dto';
 import { GoalStatus } from '@prisma/client';
+import { handlePrismaError } from '../../common/utils/prisma-error.handler';
 
 /**
  * Goals Service
@@ -23,6 +24,8 @@ import { GoalStatus } from '@prisma/client';
  */
 @Injectable()
 export class GoalsService {
+  private readonly logger = new Logger(GoalsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -36,38 +39,51 @@ export class GoalsService {
    * Default status: active
    */
   async createGoal(userId: string, dto: CreateGoalDto) {
-    // If planId provided, verify it exists and belongs to user
-    if (dto.planId) {
-      const plan = await this.prisma.workoutPlan.findUnique({
-        where: { id: dto.planId },
-      });
+    try {
+      // If planId provided, verify it exists and belongs to user
+      if (dto.planId) {
+        const plan = await this.prisma.workoutPlan.findUnique({
+          where: { id: dto.planId },
+        });
 
-      if (!plan || plan.userId !== userId) {
-        throw new NotFoundException('Workout plan not found');
+        if (!plan || plan.userId !== userId) {
+          throw new NotFoundException({
+            message: 'Workout plan not found',
+            error: 'PlanNotFound',
+          });
+        }
       }
-    }
 
-    const goal = await this.prisma.userGoal.create({
-      data: {
-        userId,
-        type: dto.type,
-        description: dto.description,
-        targetDate: dto.targetDate ? new Date(dto.targetDate) : null,
-        startWeightKg: dto.startWeightKg,
-        targetWeightKg: dto.targetWeightKg,
-        status: GoalStatus.active,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
+      this.logger.log(`Creating goal for user ${userId}: ${dto.type}`);
+
+      const goal = await this.prisma.userGoal.create({
+        data: {
+          userId,
+          type: dto.type,
+          description: dto.description,
+          targetDate: dto.targetDate ? new Date(dto.targetDate) : null,
+          startWeightKg: dto.startWeightKg,
+          targetWeightKg: dto.targetWeightKg,
+          status: GoalStatus.active,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    return goal;
+      this.logger.log(`Successfully created goal ${goal.id}`);
+      return goal;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'create goal');
+    }
   }
 
   /**
@@ -77,24 +93,28 @@ export class GoalsService {
    * Ordered by creation date (newest first)
    */
   async getUserGoals(userId: string, status?: GoalStatus) {
-    return this.prisma.userGoal.findMany({
-      where: {
-        userId,
-        ...(status && { status }),
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        type: true,
-        description: true,
-        targetDate: true,
-        startWeightKg: true,
-        targetWeightKg: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    try {
+      return await this.prisma.userGoal.findMany({
+        where: {
+          userId,
+          ...(status && { status }),
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          type: true,
+          description: true,
+          targetDate: true,
+          startWeightKg: true,
+          targetWeightKg: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'get user goals');
+    }
   }
 
   /**
@@ -106,27 +126,40 @@ export class GoalsService {
    * 3. Return with optional plan details
    */
   async getGoalById(userId: string, goalId: string) {
-    const goal = await this.prisma.userGoal.findUnique({
-      where: { id: goalId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
+    try {
+      const goal = await this.prisma.userGoal.findUnique({
+        where: { id: goalId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!goal) {
-      throw new NotFoundException('Goal not found');
+      if (!goal) {
+        throw new NotFoundException({
+          message: 'Goal not found',
+          error: 'GoalNotFound',
+        });
+      }
+
+      if (goal.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'You do not have access to this goal',
+          error: 'GoalAccessDenied',
+        });
+      }
+
+      return goal;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'get goal by ID');
     }
-
-    if (goal.userId !== userId) {
-      throw new ForbiddenException('You do not have access to this goal');
-    }
-
-    return goal;
   }
 
   /**
@@ -140,31 +173,43 @@ export class GoalsService {
    * Note: Status updates use separate endpoint
    */
   async updateGoal(userId: string, goalId: string, dto: UpdateGoalDto) {
-    // Verify ownership
-    await this.getGoalById(userId, goalId);
+    try {
+      // Verify ownership
+      await this.getGoalById(userId, goalId);
 
-    // If updating planId, verify plan exists and belongs to user
-    if (dto.planId) {
-      const plan = await this.prisma.workoutPlan.findUnique({
-        where: { id: dto.planId },
+      // If updating planId, verify plan exists and belongs to user
+      if (dto.planId) {
+        const plan = await this.prisma.workoutPlan.findUnique({
+          where: { id: dto.planId },
+        });
+
+        if (!plan || plan.userId !== userId) {
+          throw new NotFoundException({
+            message: 'Workout plan not found',
+            error: 'PlanNotFound',
+          });
+        }
+      }
+
+      this.logger.log(`Updating goal ${goalId} for user ${userId}`);
+
+      const goal = await this.prisma.userGoal.update({
+        where: { id: goalId },
+        data: {
+          description: dto.description,
+          targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
+          startWeightKg: dto.startWeightKg,
+          targetWeightKg: dto.targetWeightKg,
+        },
       });
 
-      if (!plan || plan.userId !== userId) {
-        throw new NotFoundException('Workout plan not found');
+      return goal;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
       }
+      handlePrismaError(error, this.logger, 'update goal');
     }
-
-    const goal = await this.prisma.userGoal.update({
-      where: { id: goalId },
-      data: {
-        description: dto.description,
-        targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
-        startWeightKg: dto.startWeightKg,
-        targetWeightKg: dto.targetWeightKg,
-      },
-    });
-
-    return goal;
   }
 
   /**
@@ -180,15 +225,24 @@ export class GoalsService {
    * No restrictions on transitions (user has full control)
    */
   async updateGoalStatus(userId: string, goalId: string, dto: UpdateGoalStatusDto) {
-    // Verify ownership
-    await this.getGoalById(userId, goalId);
+    try {
+      // Verify ownership
+      await this.getGoalById(userId, goalId);
 
-    const goal = await this.prisma.userGoal.update({
-      where: { id: goalId },
-      data: { status: dto.status },
-    });
+      this.logger.log(`Updating goal ${goalId} status to ${dto.status} for user ${userId}`);
 
-    return goal;
+      const goal = await this.prisma.userGoal.update({
+        where: { id: goalId },
+        data: { status: dto.status },
+      });
+
+      return goal;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update goal status');
+    }
   }
 
   /**
@@ -198,13 +252,22 @@ export class GoalsService {
    * Cascade behavior: Goal deletion does NOT affect linked workout plans
    */
   async deleteGoal(userId: string, goalId: string) {
-    // Verify ownership
-    await this.getGoalById(userId, goalId);
+    try {
+      // Verify ownership
+      await this.getGoalById(userId, goalId);
 
-    await this.prisma.userGoal.delete({
-      where: { id: goalId },
-    });
+      this.logger.log(`Deleting goal ${goalId} for user ${userId}`);
 
-    return { message: 'Goal deleted successfully' };
+      await this.prisma.userGoal.delete({
+        where: { id: goalId },
+      });
+
+      return { message: 'Goal deleted successfully' };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'delete goal');
+    }
   }
 }

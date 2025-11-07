@@ -15,6 +15,8 @@ import { LiveSessionService } from './live.service';
 import { SessionStateService } from './session-state.service';
 import { LiveEventDto } from './dtos';
 import { createWsSuccess, createWsError } from './dtos/websocket-response.dto';
+import { WebSocketRateLimiterService } from '../../../common/guards/throttler/websocket-rate-limiter.service';
+import { RATE_LIMITS } from '../../../common/guards/throttler/throttler.config';
 
 /**
  * Extract user from socket handshake (attached by auth middleware)
@@ -80,6 +82,7 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly liveService: LiveSessionService,
     private readonly sessionState: SessionStateService,
     private readonly configService: ConfigService,
+    private readonly wsRateLimiter: WebSocketRateLimiterService,
   ) {}
 
   /**
@@ -206,6 +209,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('join-session', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'join-session',
+      RATE_LIMITS.WS_SESSION_JOIN,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('join-session', RATE_LIMITS.WS_SESSION_JOIN);
+    }
+
     try {
       // Verify session exists and user has access
       const session = await this.liveService.getSession(userId, payload.sessionId);
@@ -251,6 +265,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('leave-session', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'leave-session',
+      RATE_LIMITS.WS_SESSION_LEAVE,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('leave-session', RATE_LIMITS.WS_SESSION_LEAVE);
+    }
+
     try {
       await client.leave(`session:${payload.sessionId}`);
 
@@ -291,6 +316,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('start-exercise', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'start-exercise',
+      RATE_LIMITS.WS_START_EXERCISE,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('start-exercise', RATE_LIMITS.WS_START_EXERCISE);
+    }
+
     try {
       // Verify ownership
       await this.liveService.getSession(userId, payload.sessionId);
@@ -328,6 +364,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('complete-set', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'complete-set',
+      RATE_LIMITS.WS_COMPLETE_SET,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('complete-set', RATE_LIMITS.WS_COMPLETE_SET);
+    }
+
     try {
       await this.liveService.getSession(userId, payload.sessionId);
 
@@ -361,6 +408,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('end-rest', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'end-rest',
+      RATE_LIMITS.WS_END_REST,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('end-rest', RATE_LIMITS.WS_END_REST);
+    }
+
     try {
       await this.liveService.getSession(userId, payload.sessionId);
 
@@ -389,6 +447,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (!userId) {
       return createWsError('pause-session', 'UNAUTHORIZED', 'User not authenticated');
+    }
+
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'pause-session',
+      RATE_LIMITS.WS_PAUSE_SESSION,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('pause-session', RATE_LIMITS.WS_PAUSE_SESSION);
     }
 
     try {
@@ -421,6 +490,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('resume-session', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'resume-session',
+      RATE_LIMITS.WS_RESUME_SESSION,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('resume-session', RATE_LIMITS.WS_RESUME_SESSION);
+    }
+
     try {
       await this.liveService.getSession(userId, payload.sessionId);
 
@@ -449,6 +529,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (!userId) {
       return createWsError('end-session', 'UNAUTHORIZED', 'User not authenticated');
+    }
+
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'end-session',
+      RATE_LIMITS.WS_END_SESSION,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('end-session', RATE_LIMITS.WS_END_SESSION);
     }
 
     try {
@@ -481,6 +572,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (!userId) {
       return createWsError('emit-event', 'UNAUTHORIZED', 'User not authenticated');
+    }
+
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'emit-event',
+      RATE_LIMITS.WS_EMIT_EVENT,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('emit-event', RATE_LIMITS.WS_EMIT_EVENT);
     }
 
     try {
@@ -519,6 +621,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return createWsError('heartbeat', 'UNAUTHORIZED', 'User not authenticated');
     }
 
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'heartbeat',
+      RATE_LIMITS.WS_HEARTBEAT,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('heartbeat', RATE_LIMITS.WS_HEARTBEAT);
+    }
+
     try {
       await this.liveService.recordHeartbeat(userId, payload.sessionId);
 
@@ -541,6 +654,17 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (!userId) {
       return createWsError('get-state', 'UNAUTHORIZED', 'User not authenticated');
+    }
+
+    // Rate limiting check
+    const allowed = await this.wsRateLimiter.checkLimit(
+      userId,
+      'get-state',
+      RATE_LIMITS.WS_GET_STATE,
+    );
+
+    if (!allowed) {
+      return this.createRateLimitError('get-state', RATE_LIMITS.WS_GET_STATE);
     }
 
     try {
@@ -567,5 +691,26 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    */
   private sendToUser(userId: string, event: string, data: any) {
     this.server.to(`user:${userId}`).emit(event, createWsSuccess(event, data));
+  }
+
+  /**
+   * Create rate limit exceeded error with metadata
+   */
+  private createRateLimitError(
+    eventName: string,
+    config: { ttl: number; limit: number },
+  ) {
+    const retryAfterSeconds = Math.ceil(config.ttl / 1000);
+    return createWsError(
+      eventName,
+      'RATE_LIMIT_EXCEEDED',
+      'Too many requests. Please try again in a few seconds.',
+      {
+        retryAfter: retryAfterSeconds,
+        limit: config.limit,
+        windowMs: config.ttl,
+        resetAt: Date.now() + config.ttl,
+      },
+    );
   }
 }

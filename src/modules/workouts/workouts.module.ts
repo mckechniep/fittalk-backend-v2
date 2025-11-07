@@ -10,6 +10,7 @@ import { LiveGateway } from './live/live.gateway';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
 import { ConsultationModule } from '../consultation/consultation.module';
+import { WebSocketRateLimiterService } from '../../common/guards/throttler/websocket-rate-limiter.service';
 
 /**
  * Workouts Module
@@ -82,6 +83,7 @@ import { ConsultationModule } from '../consultation/consultation.module';
     SessionStateService, // Finite state machine (Redis-backed)
     LiveSessionService, // Session lifecycle management
     LiveGateway, // WebSocket gateway for real-time events
+    WebSocketRateLimiterService, // WebSocket rate limiting
   ],
   exports: [
     SchedulingService, // Available for AI module, cron jobs, event handlers

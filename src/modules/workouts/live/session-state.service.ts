@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { REDIS_CLIENT } from '../../../common/redis/redis.module';
 import type { RedisClientType } from 'redis';
@@ -46,45 +46,61 @@ export class SessionStateService {
    * Initialize a new session state in Redis
    */
   async initializeState(sessionId: string, initialExerciseId?: string): Promise<SessionStateSnapshotDto> {
-    const snapshot: SessionStateSnapshotDto = {
-      sessionId,
-      status: 'idle',
-      currentExerciseId: initialExerciseId || null,
-      currentExerciseIndex: initialExerciseId ? 0 : undefined,
-      currentSetNumber: 0,
-      totalSetsCompleted: 0,
-      restTimerStartedAt: null,
-      restDurationMs: null,
-      lastActivityAt: new Date(),
-      metadata: {},
-    };
+    try {
+      const snapshot: SessionStateSnapshotDto = {
+        sessionId,
+        status: 'idle',
+        currentExerciseId: initialExerciseId || null,
+        currentExerciseIndex: initialExerciseId ? 0 : undefined,
+        currentSetNumber: 0,
+        totalSetsCompleted: 0,
+        restTimerStartedAt: null,
+        restDurationMs: null,
+        lastActivityAt: new Date(),
+        metadata: {},
+      };
 
-    await this.persistState(sessionId, snapshot);
-    this.logger.log(`Initialized state for session ${sessionId}`);
+      await this.persistState(sessionId, snapshot);
+      this.logger.log(`Initialized state for session ${sessionId}`);
 
-    return snapshot;
+      return snapshot;
+    } catch (error) {
+      this.logger.error(`Failed to initialize state for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to initialize session state',
+        error: 'RedisError',
+      });
+    }
   }
 
   /**
    * Get current state snapshot from Redis
    */
   async getSnapshot(sessionId: string): Promise<SessionStateSnapshotDto | null> {
-    const key = this.getRedisKey(sessionId);
-    const data = await this.redis.get(key);
-
-    if (!data) {
-      this.logger.warn(`No state found for session ${sessionId}`);
-      return null;
-    }
-
     try {
-      const parsed = JSON.parse(data);
-      // Convert lastActivityAt back to Date
-      parsed.lastActivityAt = new Date(parsed.lastActivityAt);
-      return parsed as SessionStateSnapshotDto;
+      const key = this.getRedisKey(sessionId);
+      const data = await this.redis.get(key);
+
+      if (!data) {
+        this.logger.warn(`No state found for session ${sessionId}`);
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(data);
+        // Convert lastActivityAt back to Date
+        parsed.lastActivityAt = new Date(parsed.lastActivityAt);
+        return parsed as SessionStateSnapshotDto;
+      } catch (parseError) {
+        this.logger.error(`Failed to parse state for session ${sessionId}`, parseError);
+        return null;
+      }
     } catch (error) {
-      this.logger.error(`Failed to parse state for session ${sessionId}`, error);
-      return null;
+      this.logger.error(`Redis error getting snapshot for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to retrieve session state',
+        error: 'RedisError',
+      });
     }
   }
 
@@ -96,32 +112,47 @@ export class SessionStateService {
     newState: SessionState,
     updates?: Partial<SessionStateSnapshotDto>,
   ): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot) {
-      throw new BadRequestException(`Session ${sessionId} not found or expired`);
+      if (!currentSnapshot) {
+        throw new BadRequestException({
+          message: `Session ${sessionId} not found or expired`,
+          error: 'SessionNotFound',
+        });
+      }
+
+      // Validate state transition
+      const allowedTransitions = STATE_TRANSITIONS[currentSnapshot.status];
+      if (!allowedTransitions.includes(newState)) {
+        throw new BadRequestException({
+          message: `Invalid state transition: ${currentSnapshot.status} → ${newState}`,
+          error: 'InvalidStateTransition',
+        });
+      }
+
+      // Apply transition
+      const updatedSnapshot: SessionStateSnapshotDto = {
+        ...currentSnapshot,
+        ...updates,
+        status: newState,
+        lastActivityAt: new Date(),
+      };
+
+      await this.persistState(sessionId, updatedSnapshot);
+      this.logger.log(`Session ${sessionId} transitioned: ${currentSnapshot.status} → ${newState}`);
+
+      return updatedSnapshot;
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error transitioning session ${sessionId} to ${newState}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to transition session state',
+        error: 'StateTransitionError',
+      });
     }
-
-    // Validate state transition
-    const allowedTransitions = STATE_TRANSITIONS[currentSnapshot.status];
-    if (!allowedTransitions.includes(newState)) {
-      throw new BadRequestException(
-        `Invalid state transition: ${currentSnapshot.status} → ${newState}`,
-      );
-    }
-
-    // Apply transition
-    const updatedSnapshot: SessionStateSnapshotDto = {
-      ...currentSnapshot,
-      ...updates,
-      status: newState,
-      lastActivityAt: new Date(),
-    };
-
-    await this.persistState(sessionId, updatedSnapshot);
-    this.logger.log(`Session ${sessionId} transitioned: ${currentSnapshot.status} → ${newState}`);
-
-    return updatedSnapshot;
   }
 
   /**
@@ -148,88 +179,147 @@ export class SessionStateService {
     sessionId: string,
     restDurationMs: number,
   ): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot || currentSnapshot.status !== 'exercising') {
-      throw new BadRequestException('Cannot complete set: not currently exercising');
+      if (!currentSnapshot || currentSnapshot.status !== 'exercising') {
+        throw new BadRequestException({
+          message: 'Cannot complete set: not currently exercising',
+          error: 'InvalidSessionState',
+        });
+      }
+
+      return await this.transitionTo(sessionId, 'resting', {
+        totalSetsCompleted: (currentSnapshot.totalSetsCompleted || 0) + 1,
+        restTimerStartedAt: Date.now(),
+        restDurationMs,
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error completing set for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to complete set',
+        error: 'StateUpdateError',
+      });
     }
-
-    return this.transitionTo(sessionId, 'resting', {
-      totalSetsCompleted: (currentSnapshot.totalSetsCompleted || 0) + 1,
-      restTimerStartedAt: Date.now(),
-      restDurationMs,
-    });
   }
 
   /**
    * End rest period and return to exercising
    */
   async endRest(sessionId: string): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot || currentSnapshot.status !== 'resting') {
-      throw new BadRequestException('Cannot end rest: not currently resting');
+      if (!currentSnapshot || currentSnapshot.status !== 'resting') {
+        throw new BadRequestException({
+          message: 'Cannot end rest: not currently resting',
+          error: 'InvalidSessionState',
+        });
+      }
+
+      return await this.transitionTo(sessionId, 'exercising', {
+        currentSetNumber: (currentSnapshot.currentSetNumber || 0) + 1,
+        restTimerStartedAt: null,
+        restDurationMs: null,
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error ending rest for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to end rest',
+        error: 'StateUpdateError',
+      });
     }
-
-    return this.transitionTo(sessionId, 'exercising', {
-      currentSetNumber: (currentSnapshot.currentSetNumber || 0) + 1,
-      restTimerStartedAt: null,
-      restDurationMs: null,
-    });
   }
 
   /**
    * Pause session
    */
   async pause(sessionId: string): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot) {
-      throw new BadRequestException(`Session ${sessionId} not found`);
+      if (!currentSnapshot) {
+        throw new BadRequestException({
+          message: `Session ${sessionId} not found`,
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (currentSnapshot.status === 'paused') {
+        return currentSnapshot; // Already paused - idempotent
+      }
+
+      if (currentSnapshot.status === 'completed') {
+        throw new BadRequestException({
+          message: 'Cannot pause a completed session',
+          error: 'InvalidSessionState',
+        });
+      }
+
+      return await this.transitionTo(sessionId, 'paused', {
+        // Preserve rest timer if paused during rest
+        metadata: {
+          ...currentSnapshot.metadata,
+          pausedFromState: currentSnapshot.status,
+          pausedAt: Date.now(),
+        },
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error pausing session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to pause session',
+        error: 'StateUpdateError',
+      });
     }
-
-    if (currentSnapshot.status === 'paused') {
-      return currentSnapshot; // Already paused - idempotent
-    }
-
-    if (currentSnapshot.status === 'completed') {
-      throw new BadRequestException('Cannot pause a completed session');
-    }
-
-    return this.transitionTo(sessionId, 'paused', {
-      // Preserve rest timer if paused during rest
-      metadata: {
-        ...currentSnapshot.metadata,
-        pausedFromState: currentSnapshot.status,
-        pausedAt: Date.now(),
-      },
-    });
   }
 
   /**
    * Resume from pause
    */
   async resume(sessionId: string): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot || currentSnapshot.status !== 'paused') {
-      throw new BadRequestException('Cannot resume: session not paused');
+      if (!currentSnapshot || currentSnapshot.status !== 'paused') {
+        throw new BadRequestException({
+          message: 'Cannot resume: session not paused',
+          error: 'InvalidSessionState',
+        });
+      }
+
+      // Resume to the state we were in before pausing
+      const previousState = currentSnapshot.metadata?.pausedFromState as SessionState;
+      const resumeState = previousState && ['exercising', 'resting'].includes(previousState)
+        ? previousState
+        : 'exercising';
+
+      return await this.transitionTo(sessionId, resumeState, {
+        metadata: {
+          ...currentSnapshot.metadata,
+          pausedFromState: undefined,
+          pausedAt: undefined,
+          resumedAt: Date.now(),
+        },
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error resuming session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to resume session',
+        error: 'StateUpdateError',
+      });
     }
-
-    // Resume to the state we were in before pausing
-    const previousState = currentSnapshot.metadata?.pausedFromState as SessionState;
-    const resumeState = previousState && ['exercising', 'resting'].includes(previousState)
-      ? previousState
-      : 'exercising';
-
-    return this.transitionTo(sessionId, resumeState, {
-      metadata: {
-        ...currentSnapshot.metadata,
-        pausedFromState: undefined,
-        pausedAt: undefined,
-        resumedAt: Date.now(),
-      },
-    });
   }
 
   /**
@@ -250,32 +340,54 @@ export class SessionStateService {
     sessionId: string,
     metadata: Record<string, any>,
   ): Promise<SessionStateSnapshotDto> {
-    const currentSnapshot = await this.getSnapshot(sessionId);
+    try {
+      const currentSnapshot = await this.getSnapshot(sessionId);
 
-    if (!currentSnapshot) {
-      throw new BadRequestException(`Session ${sessionId} not found`);
+      if (!currentSnapshot) {
+        throw new BadRequestException({
+          message: `Session ${sessionId} not found`,
+          error: 'SessionNotFound',
+        });
+      }
+
+      const updatedSnapshot: SessionStateSnapshotDto = {
+        ...currentSnapshot,
+        metadata: {
+          ...currentSnapshot.metadata,
+          ...metadata,
+        },
+        lastActivityAt: new Date(),
+      };
+
+      await this.persistState(sessionId, updatedSnapshot);
+      return updatedSnapshot;
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      this.logger.error(`Error updating metadata for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to update session metadata',
+        error: 'StateUpdateError',
+      });
     }
-
-    const updatedSnapshot: SessionStateSnapshotDto = {
-      ...currentSnapshot,
-      metadata: {
-        ...currentSnapshot.metadata,
-        ...metadata,
-      },
-      lastActivityAt: new Date(),
-    };
-
-    await this.persistState(sessionId, updatedSnapshot);
-    return updatedSnapshot;
   }
 
   /**
    * Delete state from Redis (for cleanup or cancellation)
    */
   async deleteState(sessionId: string): Promise<void> {
-    const key = this.getRedisKey(sessionId);
-    await this.redis.del(key);
-    this.logger.log(`Deleted state for session ${sessionId}`);
+    try {
+      const key = this.getRedisKey(sessionId);
+      await this.redis.del(key);
+      this.logger.log(`Deleted state for session ${sessionId}`);
+    } catch (error) {
+      this.logger.error(`Redis error deleting state for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to delete session state',
+        error: 'RedisError',
+      });
+    }
   }
 
   /**
@@ -290,10 +402,18 @@ export class SessionStateService {
    * Persist state to Redis with TTL
    */
   private async persistState(sessionId: string, snapshot: SessionStateSnapshotDto): Promise<void> {
-    const key = this.getRedisKey(sessionId);
-    const data = JSON.stringify(snapshot);
+    try {
+      const key = this.getRedisKey(sessionId);
+      const data = JSON.stringify(snapshot);
 
-    await this.redis.setEx(key, this.STATE_TTL_SECONDS, data);
+      await this.redis.setEx(key, this.STATE_TTL_SECONDS, data);
+    } catch (error) {
+      this.logger.error(`Redis error persisting state for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to persist session state',
+        error: 'RedisError',
+      });
+    }
   }
 
   /**
@@ -307,7 +427,15 @@ export class SessionStateService {
    * Extend TTL for active sessions (call on heartbeat)
    */
   async extendTTL(sessionId: string): Promise<void> {
-    const key = this.getRedisKey(sessionId);
-    await this.redis.expire(key, this.STATE_TTL_SECONDS);
+    try {
+      const key = this.getRedisKey(sessionId);
+      await this.redis.expire(key, this.STATE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.error(`Redis error extending TTL for session ${sessionId}`, error);
+      throw new InternalServerErrorException({
+        message: 'Failed to extend session TTL',
+        error: 'RedisError',
+      });
+    }
   }
 }

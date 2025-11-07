@@ -4,9 +4,11 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
   Inject,
 } from '@nestjs/common';
+import { handlePrismaError } from '../../../common/utils/prisma-error.handler';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PlannerService, ScheduledAssignment } from './planner.service';
 import { ScheduleWeekDto } from '../dtos/schedule-week.dto';
@@ -98,26 +100,29 @@ export class SchedulingService {
     userId: string,
     dto: ScheduleWeekDto,
   ): Promise<ScheduleWeekResponseDto> {
-    // Parse and validate week start date
-    const weekStart = this.parseAndValidateWeekStart(dto.weekStart);
-    const weekKey = this.getWeekKey(weekStart);
-
-    this.logger.log(
-      `Generating schedule for user ${userId}, week ${weekKey}, regenerate=${dto.regenerate}`,
-    );
-
-    // Acquire distributed lock to prevent concurrent generation
-    const lockKey = `lock:schedule:${userId}:${weekKey}`;
-    const lockValue = `${Date.now()}`; // Unique value for this lock holder
-    const lockAcquired = await this.acquireLock(lockKey, lockValue);
-
-    if (!lockAcquired) {
-      throw new BadRequestException(
-        'Schedule generation already in progress for this week. Please try again in a moment.',
-      );
-    }
+    let lockKey: string | null = null;
+    let lockValue: string | null = null;
 
     try {
+      // Parse and validate week start date
+      const weekStart = this.parseAndValidateWeekStart(dto.weekStart);
+      const weekKey = this.getWeekKey(weekStart);
+
+      this.logger.log(
+        `Generating schedule for user ${userId}, week ${weekKey}, regenerate=${dto.regenerate}`,
+      );
+
+      // Acquire distributed lock to prevent concurrent generation
+      lockKey = `lock:schedule:${userId}:${weekKey}`;
+      lockValue = `${Date.now()}`; // Unique value for this lock holder
+      const lockAcquired = await this.acquireLock(lockKey, lockValue);
+
+      if (!lockAcquired) {
+        throw new BadRequestException({
+          message: 'Schedule generation already in progress for this week. Please try again in a moment.',
+          error: 'ScheduleGenerationInProgress',
+        });
+      }
       // Check if week already scheduled
       if (!dto.regenerate) {
         const existingSchedule = await this.getExistingSchedule(
@@ -141,7 +146,10 @@ export class SchedulingService {
       const plan = await this.getUserPlan(userId, dto.planId);
 
       if (!plan) {
-        throw new NotFoundException('No active workout plan found for user');
+        throw new NotFoundException({
+          message: 'No active workout plan found for user',
+          error: 'PlanNotFound',
+        });
       }
 
       // Fetch workout days for this week
@@ -217,9 +225,20 @@ export class SchedulingService {
         planResult.unscheduled,
         workoutDays.length,
       );
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      return handlePrismaError(error, this.logger, 'generate week schedule');
     } finally {
-      // Always release lock
-      await this.releaseLock(lockKey, lockValue);
+      // Always release lock if acquired
+      if (lockKey && lockValue) {
+        await this.releaseLock(lockKey, lockValue);
+      }
     }
   }
 
@@ -238,45 +257,52 @@ export class SchedulingService {
     planId?: string,
     status?: ScheduledWorkoutStatus,
   ): Promise<ScheduledWorkoutResponseDto[]> {
-    // Default to current week if not provided
-    const startDate = weekStart
-      ? this.parseAndValidateWeekStart(weekStart)
-      : this.getCurrentWeekStart();
+    try {
+      // Default to current week if not provided
+      const startDate = weekStart
+        ? this.parseAndValidateWeekStart(weekStart)
+        : this.getCurrentWeekStart();
 
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 7);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 7);
 
-    const scheduledWorkouts = await this.prisma.scheduledWorkout.findMany({
-      where: {
-        userId,
-        scheduledAt: {
-          gte: startDate,
-          lt: endDate,
+      const scheduledWorkouts = await this.prisma.scheduledWorkout.findMany({
+        where: {
+          userId,
+          scheduledAt: {
+            gte: startDate,
+            lt: endDate,
+          },
+          ...(planId && { planId }),
+          ...(status && { status }),
         },
-        ...(planId && { planId }),
-        ...(status && { status }),
-      },
-      include: {
-        plan: true,
-        day: {
-          include: {
-            items: {
-              include: {
-                exercise: true,
-              },
-              orderBy: {
-                order: 'asc',
+        include: {
+          plan: true,
+          day: {
+            include: {
+              items: {
+                include: {
+                  exercise: true,
+                },
+                orderBy: {
+                  order: 'asc',
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        scheduledAt: 'asc',
-      },
-    });
+        orderBy: {
+          scheduledAt: 'asc',
+        },
+      });
 
-    return scheduledWorkouts.map((sw) => this.transformToResponseDto(sw));
+      return scheduledWorkouts.map((sw) => this.transformToResponseDto(sw));
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'get week schedule');
+    }
   }
 
   /**
@@ -288,39 +314,43 @@ export class SchedulingService {
   async getUpcomingWorkout(
     userId: string,
   ): Promise<ScheduledWorkoutResponseDto | null> {
-    const now = new Date();
+    try {
+      const now = new Date();
 
-    const nextWorkout = await this.prisma.scheduledWorkout.findFirst({
-      where: {
-        userId,
-        scheduledAt: { gte: now },
-        status: 'scheduled',
-      },
-      include: {
-        plan: true,
-        day: {
-          include: {
-            items: {
-              include: {
-                exercise: true,
-              },
-              orderBy: {
-                order: 'asc',
+      const nextWorkout = await this.prisma.scheduledWorkout.findFirst({
+        where: {
+          userId,
+          scheduledAt: { gte: now },
+          status: 'scheduled',
+        },
+        include: {
+          plan: true,
+          day: {
+            include: {
+              items: {
+                include: {
+                  exercise: true,
+                },
+                orderBy: {
+                  order: 'asc',
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        scheduledAt: 'asc',
-      },
-    });
+        orderBy: {
+          scheduledAt: 'asc',
+        },
+      });
 
-    if (!nextWorkout) {
-      return null;
+      if (!nextWorkout) {
+        return null;
+      }
+
+      return this.transformToResponseDto(nextWorkout);
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'get upcoming workout');
     }
-
-    return this.transformToResponseDto(nextWorkout);
   }
 
   /**
@@ -335,29 +365,44 @@ export class SchedulingService {
     userId: string,
     scheduledWorkoutId: string,
   ): Promise<void> {
-    const workout = await this.prisma.scheduledWorkout.findUnique({
-      where: { id: scheduledWorkoutId },
-    });
+    try {
+      const workout = await this.prisma.scheduledWorkout.findUnique({
+        where: { id: scheduledWorkoutId },
+      });
 
-    if (!workout) {
-      throw new NotFoundException('Scheduled workout not found');
+      if (!workout) {
+        throw new NotFoundException({
+          message: 'Scheduled workout not found',
+          error: 'WorkoutNotFound',
+        });
+      }
+
+      if (workout.userId !== userId) {
+        this.logger.warn(
+          `User ${userId} attempted to cancel workout ${scheduledWorkoutId} owned by ${workout.userId}`,
+        );
+        throw new ForbiddenException({
+          message: 'You do not have access to this workout',
+          error: 'WorkoutAccessDenied',
+        });
+      }
+
+      this.logger.log(`Cancelling scheduled workout ${scheduledWorkoutId} for user ${userId}`);
+
+      await this.prisma.scheduledWorkout.update({
+        where: { id: scheduledWorkoutId },
+        data: {
+          status: 'cancelled',
+        },
+      });
+
+      this.logger.log(`Successfully cancelled scheduled workout ${scheduledWorkoutId}`);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'cancel scheduled workout');
     }
-
-    if (workout.userId !== userId) {
-      this.logger.warn(
-        `User ${userId} attempted to cancel workout ${scheduledWorkoutId} owned by ${workout.userId}`,
-      );
-      throw new ForbiddenException('You do not have access to this workout');
-    }
-
-    await this.prisma.scheduledWorkout.update({
-      where: { id: scheduledWorkoutId },
-      data: {
-        status: 'cancelled',
-      },
-    });
-
-    this.logger.log(`Cancelled scheduled workout ${scheduledWorkoutId}`);
   }
 
   // ==================== PRIVATE HELPER METHODS ====================
@@ -437,38 +482,51 @@ export class SchedulingService {
    * @throws ForbiddenException if user doesn't own the plan
    */
   private async getUserPlan(userId: string, planId?: string) {
-    if (planId) {
-      // Fetch specific plan
-      const plan = await this.prisma.workoutPlan.findUnique({
-        where: { id: planId },
+    try {
+      if (planId) {
+        // Fetch specific plan
+        const plan = await this.prisma.workoutPlan.findUnique({
+          where: { id: planId },
+        });
+
+        if (!plan) {
+          throw new NotFoundException({
+            message: `Workout plan ${planId} not found`,
+            error: 'PlanNotFound',
+          });
+        }
+
+        if (plan.userId !== userId) {
+          this.logger.warn(
+            `User ${userId} attempted to access plan ${planId} owned by ${plan.userId}`,
+          );
+          throw new ForbiddenException({
+            message: 'You do not have access to this plan',
+            error: 'PlanAccessDenied',
+          });
+        }
+
+        return plan;
+      }
+
+      // Fetch active plan
+      const plan = await this.prisma.workoutPlan.findFirst({
+        where: {
+          userId,
+          status: 'active',
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
       });
 
-      if (!plan) {
-        throw new NotFoundException(`Workout plan ${planId} not found`);
-      }
-
-      if (plan.userId !== userId) {
-        this.logger.warn(
-          `User ${userId} attempted to access plan ${planId} owned by ${plan.userId}`,
-        );
-        throw new ForbiddenException('You do not have access to this plan');
-      }
-
       return plan;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'get user plan');
     }
-
-    // Fetch active plan
-    const plan = await this.prisma.workoutPlan.findFirst({
-      where: {
-        userId,
-        status: 'active',
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    return plan;
   }
 
   /**
@@ -598,68 +656,72 @@ export class SchedulingService {
     regenerate: boolean,
     weekStart: Date,
   ) {
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
+    try {
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
 
-    return this.prisma.$transaction(async (tx) => {
-      // If regenerate, delete existing scheduled workouts for this week
-      if (regenerate) {
-        const deleted = await tx.scheduledWorkout.deleteMany({
+      return await this.prisma.$transaction(async (tx) => {
+        // If regenerate, delete existing scheduled workouts for this week
+        if (regenerate) {
+          const deleted = await tx.scheduledWorkout.deleteMany({
+            where: {
+              userId,
+              scheduledAt: {
+                gte: weekStart,
+                lt: weekEnd,
+              },
+              status: 'scheduled', // Only delete not-yet-started workouts
+            },
+          });
+
+          this.logger.log(`Deleted ${deleted.count} existing scheduled workouts`);
+        }
+
+        // Insert new scheduled workouts
+        await tx.scheduledWorkout.createMany({
+          data: assignments.map((a) => ({
+            userId,
+            planId: a.planId,
+            dayId: a.dayId,
+            scheduledAt: a.scheduledAt,
+            status: 'scheduled',
+          })),
+        });
+
+        // Fetch created workouts with full details
+        const created = await tx.scheduledWorkout.findMany({
           where: {
             userId,
             scheduledAt: {
               gte: weekStart,
               lt: weekEnd,
             },
-            status: 'scheduled', // Only delete not-yet-started workouts
           },
-        });
-
-        this.logger.log(`Deleted ${deleted.count} existing scheduled workouts`);
-      }
-
-      // Insert new scheduled workouts
-      await tx.scheduledWorkout.createMany({
-        data: assignments.map((a) => ({
-          userId,
-          planId: a.planId,
-          dayId: a.dayId,
-          scheduledAt: a.scheduledAt,
-          status: 'scheduled',
-        })),
-      });
-
-      // Fetch created workouts with full details
-      const created = await tx.scheduledWorkout.findMany({
-        where: {
-          userId,
-          scheduledAt: {
-            gte: weekStart,
-            lt: weekEnd,
-          },
-        },
-        include: {
-          plan: true,
-          day: {
-            include: {
-              items: {
-                include: {
-                  exercise: true,
-                },
-                orderBy: {
-                  order: 'asc',
+          include: {
+            plan: true,
+            day: {
+              include: {
+                items: {
+                  include: {
+                    exercise: true,
+                  },
+                  orderBy: {
+                    order: 'asc',
+                  },
                 },
               },
             },
           },
-        },
-        orderBy: {
-          scheduledAt: 'asc',
-        },
-      });
+          orderBy: {
+            scheduledAt: 'asc',
+          },
+        });
 
-      return created;
-    });
+        return created;
+      });
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'persist scheduled workouts');
+    }
   }
 
   /**

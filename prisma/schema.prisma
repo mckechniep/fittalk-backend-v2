@@ -290,13 +290,14 @@ model MacroTarget {
   fatsG     Int?
   startsOn  DateTime  @default(now())
   endsOn    DateTime?
-  deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, startsOn])
   @@index([deletedAt])
+  @@index([userId, deletedAt, startsOn])
 }
 
 model FoodItem {
@@ -310,9 +311,9 @@ model FoodItem {
   fatsG        Decimal       @db.Decimal(6, 2)
   tags         String[]      @default([])
   source       String?
-  deletedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
   groceryItems GroceryItem[]
   mealEntries  MealEntry[]
 
@@ -325,14 +326,15 @@ model GroceryList {
   userId    String
   title     String        @default("Weekly Grocery List")
   weekOf    DateTime
-  deletedAt DateTime?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
   items     GroceryItem[]
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, weekOf])
   @@index([deletedAt])
+  @@index([userId, deletedAt])
 }
 
 model GroceryItem {
@@ -365,17 +367,18 @@ model MealLog {
 
   @@index([userId, loggedAt])
   @@index([deletedAt])
+  @@index([userId, deletedAt])
 }
 
 model MealEntry {
-  id         String    @id @default(uuid())
+  id         String   @id @default(uuid())
   mealLogId  String
   foodItemId String
-  servings   Decimal   @db.Decimal(6, 2)
+  servings   Decimal  @db.Decimal(6, 2)
   servingG   Int?
-  createdAt  DateTime  @default(now())
-  foodItem   FoodItem  @relation(fields: [foodItemId], references: [id])
-  mealLog    MealLog   @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+  mealLog    MealLog  @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
 
   @@index([mealLogId])
   @@index([foodItemId])
@@ -489,6 +492,7 @@ model ScheduledWorkout {
   @@index([userId, scheduledAt])
   @@index([planId])
   @@index([dayId])
+  @@index([userId, status, scheduledAt])
 }
 
 model LiveWorkoutSession {

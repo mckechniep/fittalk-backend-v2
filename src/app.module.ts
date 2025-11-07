@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -14,6 +15,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLoggingModule } from './modules/workout-logging/workout-logging.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { CustomThrottlerGuard } from './common/guards/throttler/custom-throttler.guard';
 import {
   appConfig,
   supabaseConfig,
@@ -48,13 +50,25 @@ import {
       max: 100, // Maximum number of items in cache
     }),
 
-    // Rate limiting
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 60 seconds
-        limit: 10, // 10 requests per minute
+    // Rate limiting with Redis storage (production-ready, distributed)
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('redis.url') || 'redis://localhost:6379';
+        return {
+          throttlers: [
+            {
+              ttl: config.get<number>('throttle.global.ttl', 60000), // 60 seconds default
+              limit: config.get<number>('throttle.global.limit', 10), // 10 requests/min default
+            },
+          ],
+          // Redis storage for distributed rate limiting across multiple instances
+          // Using Redis connection string from environment
+          storage: new ThrottlerStorageRedisService(redisUrl),
+        };
       },
-    ]),
+    }),
 
     // Infrastructure modules (@Global - available everywhere)
     PrismaModule, // Database access
@@ -76,10 +90,10 @@ import {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-    // Global Throttler Guard
+    // Global Custom Throttler Guard (with logging and metrics)
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CustomThrottlerGuard,
     },
   ],
 })

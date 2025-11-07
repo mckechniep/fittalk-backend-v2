@@ -25,6 +25,15 @@ import { UpdateWorkoutDayDto } from './dto/update-workout-day.dto';
 import { CreateWorkoutItemDto } from './dto/create-workout-item.dto';
 import { UpdateWorkoutItemDto } from './dto/update-workout-item.dto';
 import { PlanStatus } from '@prisma/client';
+import {
+  StandardCreate,
+  ReadEndpoint,
+  FrequentRead,
+  StandardUpdate,
+  StandardDelete,
+  ExpensiveOperation,
+  HighRiskEndpoint,
+} from '../../common/guards/throttler/throttler.decorators';
 
 /**
  * Programs Controller
@@ -71,6 +80,7 @@ export class ProgramsController {
    * POST /programs
    */
   @Post()
+  @StandardCreate() // 10/min - creating workout programs
   @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.CREATED)
   async createProgram(
@@ -85,6 +95,7 @@ export class ProgramsController {
    * GET /programs?status=active
    */
   @Get()
+  @FrequentRead() // 100/min - browsing programs list
   async getUserPrograms(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: PlanStatus,
@@ -97,6 +108,7 @@ export class ProgramsController {
    * GET /programs/:id
    */
   @Get(':id')
+  @ReadEndpoint() // 60/min - viewing program details
   async getProgramById(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) programId: string,
@@ -109,6 +121,7 @@ export class ProgramsController {
    * PATCH /programs/:id
    */
   @Patch(':id')
+  @StandardUpdate() // 15/min - updating program details
   @AuditEntity('WorkoutPlan')
   async updateProgram(
     @CurrentUser() user: AuthenticatedUser,
@@ -123,6 +136,7 @@ export class ProgramsController {
    * PATCH /programs/:id/status
    */
   @Patch(':id/status')
+  @StandardUpdate() // 15/min - changing program status
   @AuditEntity('WorkoutPlan')
   async updateProgramStatus(
     @CurrentUser() user: AuthenticatedUser,
@@ -137,6 +151,7 @@ export class ProgramsController {
    * DELETE /programs/:id
    */
   @Delete(':id')
+  @HighRiskEndpoint() // 5/min - deletes entire program with cascades
   @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteProgram(
@@ -151,6 +166,7 @@ export class ProgramsController {
    * POST /programs/:id/clone
    */
   @Post(':id/clone')
+  @ExpensiveOperation() // 5/min - deep copy operation
   @AuditEntity('WorkoutPlan')
   @HttpCode(HttpStatus.CREATED)
   async cloneProgram(
@@ -167,6 +183,7 @@ export class ProgramsController {
    * POST /programs/:id/days
    */
   @Post(':id/days')
+  @StandardCreate() // 10/min - adding days to programs
   @AuditEntity('WorkoutDay')
   @HttpCode(HttpStatus.CREATED)
   async createWorkoutDay(
@@ -182,6 +199,7 @@ export class ProgramsController {
    * PATCH /programs/:id/days/:dayId
    */
   @Patch(':id/days/:dayId')
+  @StandardUpdate() // 15/min - updating workout day details
   @AuditEntity('WorkoutDay')
   async updateWorkoutDay(
     @CurrentUser() user: AuthenticatedUser,
@@ -197,6 +215,7 @@ export class ProgramsController {
    * DELETE /programs/:id/days/:dayId
    */
   @Delete(':id/days/:dayId')
+  @StandardDelete() // 10/min - removing workout days
   @AuditEntity('WorkoutDay')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkoutDay(
@@ -214,6 +233,7 @@ export class ProgramsController {
    * POST /programs/:id/days/:dayId/items
    */
   @Post(':id/days/:dayId/items')
+  @StandardCreate() // 10/min - adding exercises to days
   @AuditEntity('WorkoutItem')
   @HttpCode(HttpStatus.CREATED)
   async createWorkoutItem(
@@ -230,6 +250,7 @@ export class ProgramsController {
    * PATCH /programs/:id/days/:dayId/items/:itemId
    */
   @Patch(':id/days/:dayId/items/:itemId')
+  @StandardUpdate() // 15/min - updating exercise details
   @AuditEntity('WorkoutItem')
   async updateWorkoutItem(
     @CurrentUser() user: AuthenticatedUser,
@@ -246,6 +267,7 @@ export class ProgramsController {
    * DELETE /programs/:id/days/:dayId/items/:itemId
    */
   @Delete(':id/days/:dayId/items/:itemId')
+  @StandardDelete() // 10/min - removing exercises from days
   @AuditEntity('WorkoutItem')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteWorkoutItem(

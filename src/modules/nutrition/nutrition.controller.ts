@@ -23,7 +23,6 @@ import {
     ApiQuery,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { NutritionService } from './nutrition.service';
 import { FoodItemService } from './services/food-item.service';
 import { MacroTargetService } from './services/macro-target.service';
 import { GroceryListService } from './services/grocery-list.service';
@@ -77,7 +76,6 @@ import { MealLogResponseDto, PaginatedMealLogsResponseDto } from './dtos/meal-lo
 @UsePipes(new SanitizationPipe())
 export class NutritionController {
     constructor(
-        private readonly nutritionService: NutritionService,
         private readonly foodItemService: FoodItemService,
         private readonly macroTargetService: MacroTargetService,
         private readonly groceryListService: GroceryListService,

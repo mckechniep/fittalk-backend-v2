@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
   Inject,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SessionStateService } from './session-state.service';
@@ -18,6 +19,7 @@ import {
   LiveSessionResponseDto,
   LiveEventDto,
 } from './dtos';
+import { handlePrismaError } from '../../../common/utils/prisma-error.handler';
 
 /**
  * Live Session Service
@@ -75,75 +77,119 @@ export class LiveSessionService {
     userId: string,
     dto: CreateLiveSessionDto,
   ): Promise<LiveSessionResponseDto> {
-    // Validate plan ownership if provided
-    if (dto.workoutPlanId) {
-      const plan = await this.prisma.workoutPlan.findFirst({
-        where: { id: dto.workoutPlanId, userId },
+    try {
+      // Validate plan ownership if provided
+      if (dto.workoutPlanId) {
+        const plan = await this.prisma.workoutPlan.findFirst({
+          where: { id: dto.workoutPlanId, userId },
+        });
+
+        if (!plan) {
+          throw new NotFoundException({
+            message: 'Workout plan not found or not owned by user',
+            error: 'PlanNotFound',
+          });
+        }
+      }
+
+      this.logger.log(`Creating live session for user ${userId}`);
+
+      // Create session in database
+      const session = await this.prisma.liveWorkoutSession.create({
+        data: {
+          userId,
+          planId: dto.workoutPlanId || null,
+          startedAt: dto.scheduledAt ? new Date(dto.scheduledAt) : new Date(),
+          heartbeatAt: new Date(),
+          stateJson: {
+            title: dto.title,
+            description: dto.description,
+            private: dto.private || false,
+          } as Prisma.InputJsonValue,
+        },
       });
 
-      if (!plan) {
-        throw new NotFoundException('Workout plan not found or not owned by user');
+      // Initialize state machine in Redis
+      try {
+        await this.sessionState.initializeState(session.id);
+      } catch (redisError) {
+        this.logger.error(`Redis error initializing state for session ${session.id}`, redisError);
+        throw new InternalServerErrorException({
+          message: 'Failed to initialize session state',
+          error: 'RedisError',
+        });
       }
+
+      // Track as active session
+      try {
+        await this.redis.sAdd(this.ACTIVE_SESSIONS_KEY, session.id);
+      } catch (redisError) {
+        this.logger.error(`Redis error tracking session ${session.id}`, redisError);
+        // Non-critical - continue
+      }
+
+      this.logger.log(`Successfully created live session ${session.id}`);
+      return this.toResponseDto(session);
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'create live session');
     }
-
-    // Create session in database
-    const session = await this.prisma.liveWorkoutSession.create({
-      data: {
-        userId,
-        planId: dto.workoutPlanId || null,
-        startedAt: dto.scheduledAt ? new Date(dto.scheduledAt) : new Date(),
-        heartbeatAt: new Date(),
-        stateJson: {
-          title: dto.title,
-          description: dto.description,
-          private: dto.private || false,
-        },
-      },
-    });
-
-    // Initialize state machine in Redis
-    await this.sessionState.initializeState(session.id);
-
-    // Track as active session
-    await this.redis.sAdd(this.ACTIVE_SESSIONS_KEY, session.id);
-
-    this.logger.log(`Created live session ${session.id} for user ${userId}`);
-
-    return this.toResponseDto(session);
   }
 
   /**
    * Get session by ID with permission check
    */
   async getSession(userId: string, sessionId: string): Promise<LiveSessionResponseDto> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'You do not have access to this session',
+          error: 'SessionAccessDenied',
+        });
+      }
+
+      return this.toResponseDto(session);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'get live session');
     }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('You do not have access to this session');
-    }
-
-    return this.toResponseDto(session);
   }
 
   /**
    * Get all active sessions for a user
    */
   async getUserActiveSessions(userId: string): Promise<LiveSessionResponseDto[]> {
-    const sessions = await this.prisma.liveWorkoutSession.findMany({
-      where: {
-        userId,
-        endedAt: null, // Only active sessions
-      },
-      orderBy: { startedAt: 'desc' },
-    });
+    try {
+      const sessions = await this.prisma.liveWorkoutSession.findMany({
+        where: {
+          userId,
+          endedAt: null, // Only active sessions
+        },
+        orderBy: { startedAt: 'desc' },
+      });
 
-    return sessions.map((session) => this.toResponseDto(session));
+      return sessions.map((session) => this.toResponseDto(session));
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'get user active sessions');
+    }
   }
 
   /**
@@ -154,147 +200,233 @@ export class LiveSessionService {
     sessionId: string,
     dto: UpdateLiveSessionDto,
   ): Promise<LiveSessionResponseDto> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'Only the host can update this session',
+          error: 'SessionAccessDenied',
+        });
+      }
+
+      if (session.endedAt) {
+        throw new BadRequestException({
+          message: 'Cannot update an ended session',
+          error: 'SessionAlreadyEnded',
+        });
+      }
+
+      this.logger.log(`Updating session ${sessionId} for user ${userId}`);
+
+      // Merge stateJson updates
+      const updatedStateJson = {
+        ...(session.stateJson as Record<string, any> || {}),
+        ...(dto.title && { title: dto.title }),
+        ...(dto.description && { description: dto.description }),
+        ...(dto.private !== undefined && { private: dto.private }),
+      };
+
+      const updated = await this.prisma.liveWorkoutSession.update({
+        where: { id: sessionId },
+        data: {
+          planId: dto.workoutPlanId || session.planId,
+          stateJson: updatedStateJson,
+          ...(dto.scheduledAt && { startedAt: new Date(dto.scheduledAt) }),
+        },
+      });
+
+      this.logger.log(`Successfully updated session ${sessionId}`);
+
+      return this.toResponseDto(updated);
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'update live session');
     }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('Only the host can update this session');
-    }
-
-    if (session.endedAt) {
-      throw new BadRequestException('Cannot update an ended session');
-    }
-
-    // Merge stateJson updates
-    const updatedStateJson = {
-      ...(session.stateJson as Record<string, any> || {}),
-      ...(dto.title && { title: dto.title }),
-      ...(dto.description && { description: dto.description }),
-      ...(dto.private !== undefined && { private: dto.private }),
-    };
-
-    const updated = await this.prisma.liveWorkoutSession.update({
-      where: { id: sessionId },
-      data: {
-        planId: dto.workoutPlanId || session.planId,
-        stateJson: updatedStateJson,
-        ...(dto.scheduledAt && { startedAt: new Date(dto.scheduledAt) }),
-      },
-    });
-
-    this.logger.log(`Updated session ${sessionId}`);
-
-    return this.toResponseDto(updated);
   }
 
   /**
    * Record heartbeat to track active sessions
    */
   async recordHeartbeat(userId: string, sessionId: string): Promise<void> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'Not authorized',
+          error: 'SessionAccessDenied',
+        });
+      }
+
+      await this.prisma.liveWorkoutSession.update({
+        where: { id: sessionId },
+        data: { heartbeatAt: new Date() },
+      });
+
+      // Extend Redis state TTL
+      try {
+        await this.sessionState.extendTTL(sessionId);
+      } catch (redisError) {
+        this.logger.error(`Redis error extending TTL for session ${sessionId}`, redisError);
+        // Non-critical - continue
+      }
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'record heartbeat');
     }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('Not authorized');
-    }
-
-    await this.prisma.liveWorkoutSession.update({
-      where: { id: sessionId },
-      data: { heartbeatAt: new Date() },
-    });
-
-    // Extend Redis state TTL
-    await this.sessionState.extendTTL(sessionId);
   }
 
   /**
    * End a session and persist final state
    */
   async endSession(userId: string, sessionId: string): Promise<LiveSessionResponseDto> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'Only the host can end this session',
+          error: 'SessionAccessDenied',
+        });
+      }
+
+      if (session.endedAt) {
+        // Already ended - idempotent
+        return this.toResponseDto(session);
+      }
+
+      this.logger.log(`Ending session ${sessionId} for user ${userId}`);
+
+      // Get final state snapshot from Redis
+      let finalState;
+      try {
+        finalState = await this.sessionState.getSnapshot(sessionId);
+
+        // Complete state machine
+        if (finalState && finalState.status !== 'completed') {
+          await this.sessionState.complete(sessionId);
+        }
+      } catch (redisError) {
+        this.logger.error(`Redis error getting final state for session ${sessionId}`, redisError);
+        // Continue - will save session without final state
+      }
+
+      // Update database - merge final state into stateJson
+      const currentStateJson = (session.stateJson as Prisma.JsonObject) || {};
+      const updatedStateJson: Prisma.JsonObject = {
+        ...currentStateJson,
+        finalState: finalState as Prisma.JsonValue,
+      };
+
+      const ended = await this.prisma.liveWorkoutSession.update({
+        where: { id: sessionId },
+        data: {
+          endedAt: new Date(),
+          stateJson: updatedStateJson,
+        },
+      });
+
+      // Remove from active sessions
+      try {
+        await this.redis.sRem(this.ACTIVE_SESSIONS_KEY, sessionId);
+      } catch (redisError) {
+        this.logger.error(`Redis error removing session ${sessionId} from active set`, redisError);
+        // Non-critical - continue
+      }
+
+      this.logger.log(`Successfully ended session ${sessionId}`);
+
+      return this.toResponseDto(ended);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'end live session');
     }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('Only the host can end this session');
-    }
-
-    if (session.endedAt) {
-      // Already ended - idempotent
-      return this.toResponseDto(session);
-    }
-
-    // Get final state snapshot from Redis
-    const finalState = await this.sessionState.getSnapshot(sessionId);
-
-    // Complete state machine
-    if (finalState && finalState.status !== 'completed') {
-      await this.sessionState.complete(sessionId);
-    }
-
-    // Update database - merge final state into stateJson
-    const currentStateJson = (session.stateJson as Prisma.JsonObject) || {};
-    const updatedStateJson: Prisma.JsonObject = {
-      ...currentStateJson,
-      final3State: finalState as Prisma.JsonValue,
-    };
-
-    const ended = await this.prisma.liveWorkoutSession.update({
-      where: { id: sessionId },
-      data: {
-        endedAt: new Date(),
-        stateJson: updatedStateJson,
-      },
-    });
-
-    // Remove from active sessions
-    await this.redis.sRem(this.ACTIVE_SESSIONS_KEY, sessionId);
-
-    this.logger.log(`Ended session ${sessionId}`);
-
-    return this.toResponseDto(ended);
   }
 
   /**
    * Cancel a session (delete from DB and Redis)
    */
   async cancelSession(userId: string, sessionId: string): Promise<void> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
+
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'Only the host can cancel this session',
+          error: 'SessionAccessDenied',
+        });
+      }
+
+      this.logger.log(`Cancelling session ${sessionId} for user ${userId}`);
+
+      // Delete from database
+      await this.prisma.liveWorkoutSession.delete({
+        where: { id: sessionId },
+      });
+
+      // Delete from Redis
+      try {
+        await this.sessionState.deleteState(sessionId);
+        await this.redis.sRem(this.ACTIVE_SESSIONS_KEY, sessionId);
+      } catch (redisError) {
+        this.logger.error(`Redis error cleaning up session ${sessionId}`, redisError);
+        // Non-critical - session already deleted from DB
+      }
+
+      this.logger.log(`Successfully cancelled session ${sessionId}`);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'cancel live session');
     }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('Only the host can cancel this session');
-    }
-
-    // Delete from database
-    await this.prisma.liveWorkoutSession.delete({
-      where: { id: sessionId },
-    });
-
-    // Delete from Redis
-    await this.sessionState.deleteState(sessionId);
-    await this.redis.sRem(this.ACTIVE_SESSIONS_KEY, sessionId);
-
-    this.logger.log(`Cancelled session ${sessionId}`);
   }
 
   /**
@@ -306,38 +438,57 @@ export class LiveSessionService {
     sessionId: string,
     event: LiveEventDto,
   ): Promise<void> {
-    const session = await this.prisma.liveWorkoutSession.findUnique({
-      where: { id: sessionId },
-    });
+    try {
+      const session = await this.prisma.liveWorkoutSession.findUnique({
+        where: { id: sessionId },
+      });
 
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
+      if (!session) {
+        throw new NotFoundException({
+          message: 'Session not found',
+          error: 'SessionNotFound',
+        });
+      }
 
-    if (session.userId !== userId) {
-      throw new ForbiddenException('Not authorized');
-    }
+      if (session.userId !== userId) {
+        throw new ForbiddenException({
+          message: 'Not authorized',
+          error: 'SessionAccessDenied',
+        });
+      }
 
-    const stateJson = session.stateJson as Record<string, any> || {};
-    const events = (stateJson.events as any[]) || [];
+      // Type-safe handling of stateJson with events array
+      interface SessionState {
+        events?: Array<LiveEventDto & { timestamp: number; userId: string }>;
+        [key: string]: unknown;
+      }
 
-    events.push({
-      ...event,
-      timestamp: Date.now(),
-      userId,
-    });
+      const stateJson = (session.stateJson as SessionState) || {};
+      const events = stateJson.events || [];
 
-    await this.prisma.liveWorkoutSession.update({
-      where: { id: sessionId },
-      data: {
-        stateJson: {
-          ...stateJson,
-          events,
+      events.push({
+        ...event,
+        timestamp: Date.now(),
+        userId,
+      });
+
+      await this.prisma.liveWorkoutSession.update({
+        where: { id: sessionId },
+        data: {
+          stateJson: {
+            ...stateJson,
+            events: events as unknown as Prisma.JsonValue,
+          } as Prisma.InputJsonValue,
         },
-      },
-    });
+      });
 
-    this.logger.debug(`Recorded event ${event.type} for session ${sessionId}`);
+      this.logger.debug(`Recorded event ${event.type} for session ${sessionId}`);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'record session event');
+    }
   }
 
   /**
@@ -371,26 +522,37 @@ export class LiveSessionService {
    * Clean up stale sessions (no heartbeat for > 2 intervals)
    */
   async cleanupStaleSessions(): Promise<number> {
-    const threshold = new Date(Date.now() - this.HEARTBEAT_INTERVAL_MS * 2);
+    try {
+      const threshold = new Date(Date.now() - this.HEARTBEAT_INTERVAL_MS * 2);
 
-    const staleSessions = await this.prisma.liveWorkoutSession.findMany({
-      where: {
-        endedAt: null,
-        OR: [
-          { heartbeatAt: { lt: threshold } },
-          { heartbeatAt: null },
-        ],
-      },
-      select: { id: true, userId: true },
-    });
+      this.logger.log('Starting cleanup of stale sessions');
 
-    for (const session of staleSessions) {
-      await this.endSession(session.userId, session.id);
+      const staleSessions = await this.prisma.liveWorkoutSession.findMany({
+        where: {
+          endedAt: null,
+          OR: [
+            { heartbeatAt: { lt: threshold } },
+            { heartbeatAt: null },
+          ],
+        },
+        select: { id: true, userId: true },
+      });
+
+      for (const session of staleSessions) {
+        try {
+          await this.endSession(session.userId, session.id);
+        } catch (error) {
+          this.logger.error(`Failed to end stale session ${session.id}`, error);
+          // Continue processing other sessions
+        }
+      }
+
+      this.logger.log(`Cleaned up ${staleSessions.length} stale sessions`);
+
+      return staleSessions.length;
+    } catch (error) {
+      handlePrismaError(error, this.logger, 'cleanup stale sessions');
     }
-
-    this.logger.log(`Cleaned up ${staleSessions.length} stale sessions`);
-
-    return staleSessions.length;
   }
 
   /**

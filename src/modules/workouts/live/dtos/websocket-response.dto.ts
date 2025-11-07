@@ -9,6 +9,7 @@ export interface WebSocketResponseDto<T = any> {
   error?: {
     code: string;
     message: string;
+    details?: any; // Additional error context (e.g., rate limit metadata)
   };
   timestamp: number; // Unix timestamp in ms
 }
@@ -28,11 +29,16 @@ export function createWsSuccess<T>(event: string, data?: T): WebSocketResponseDt
 /**
  * Helper to create error responses
  */
-export function createWsError(event: string, code: string, message: string): WebSocketResponseDto {
+export function createWsError(
+  event: string,
+  code: string,
+  message: string,
+  details?: any,
+): WebSocketResponseDto {
   return {
     event,
     success: false,
-    error: { code, message },
+    error: { code, message, details },
     timestamp: Date.now(),
   };
 }

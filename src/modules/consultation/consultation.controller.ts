@@ -23,6 +23,13 @@ import {
 } from './dtos/create-consultation.dto';
 import { UpdateConsultationDto } from './dtos/update-consultation.dto';
 import { ConsultationResponseDto } from './dtos/consultation-response.dto';
+import {
+  StandardCreate,
+  ReadEndpoint,
+  FrequentRead,
+  StandardUpdate,
+  FrequentMutation,
+} from '../../common/guards/throttler/throttler.decorators';
 
 /**
  * Consultation Controller
@@ -66,6 +73,7 @@ export class ConsultationController {
    */
 
   @Post()
+  @StandardCreate() // 10/min - one-time onboarding action
   @AuditEntity('ConsultationSession')
   @HttpCode(HttpStatus.CREATED)
   async createConsultation(
@@ -89,6 +97,7 @@ export class ConsultationController {
    * - Timestamps for audit trail
    */
   @Get(':id')
+  @ReadEndpoint() // 60/min - user checking consultation status
   async getConsultation(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
@@ -111,6 +120,7 @@ export class ConsultationController {
    * - If status=completed → proceed to main app
    */
   @Get()
+  @FrequentRead() // 100/min - may be called on app startup
   async getCurrentConsultation(
     @CurrentUser('id') userId: string,
   ): Promise<ConsultationResponseDto | null> {
@@ -134,6 +144,7 @@ export class ConsultationController {
    * Returns: Updated consultation session
    */
   @Patch(':id')
+  @StandardUpdate() // 15/min - updating answers during onboarding
   @AuditEntity('ConsultationSession')
   async updateConsultation(
     @CurrentUser('id') userId: string,
@@ -158,6 +169,7 @@ export class ConsultationController {
    * Returns: Updated consultation session
    */
   @Post(':id/submit-answer')
+  @FrequentMutation() // 20/min - answering questions in sequence
   @AuditEntity('ConsultationAnswer')
   async submitSingleAnswer(
     @CurrentUser('id') userId: string,
@@ -187,6 +199,7 @@ export class ConsultationController {
    * Client next step: Poll for generated workout plan or wait for push notification
    */
   @Post(':id/complete')
+  @StandardCreate() // 10/min - one-time completion action
   @AuditEntity('ConsultationSession')
   async completeConsultation(
     @CurrentUser('id') userId: string,
@@ -212,6 +225,7 @@ export class ConsultationController {
    * Consider caching with long TTL (1 hour+) in Redis.
    */
   @Get('questions/all')
+  @FrequentRead() // 100/min - static data, may be cached client-side
   async getQuestions() {
     return this.consultationService.getActiveQuestions();
   }

@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(npx prisma db push:*)",
-      "Bash(npx prisma db execute:*)"
+      "Bash(npx prisma db execute:*)",
+      "Bash(for file in /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/{auth,consultation,workout-logging,programs,nutrition}/*.service.ts /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/nutrition/services/*.service.ts)",
+      "Bash(do [ -f \"$file\" ])",
+      "Bash(echo:*)",
+      "Bash(for file in /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/{auth,consultation,workout-logging,programs}/*.service.ts)",
+      "Bash(for file in /Users/marquisedeadwiler/Desktop/seb/personal-projects/Back-End-FitTalk/src/modules/nutrition/services/*.service.ts)",
+      "Bash(do echo \"=== $file ===\")",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm remove:*)"
     ],
     "deny": [],
     "ask": []
