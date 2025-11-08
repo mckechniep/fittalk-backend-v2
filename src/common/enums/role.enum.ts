@@ -1,7 +1,8 @@
 /**
- * User Role Enum
+ * User Role Utilities
  *
- * Defines the access levels within the FitTalk application.
+ * Re-exports the Role enum from Prisma (single source of truth)
+ * and provides helper functions for role validation and hierarchy.
  *
  * Role Hierarchy (highest to lowest):
  * 1. ADMIN - Full system access, user management, configuration
@@ -11,36 +12,12 @@
  * Usage:
  * - Stored in User.role column (Prisma schema)
  * - Validated via @Roles() decorator + RolesGuard
- * - Extracted from JWT token app_metadata.role
+ * - Source of truth: Prisma database schema
  */
-export enum Role {
-  /**
-   * Administrator role
-   * - Full access to all system operations
-   * - User management (suspend, delete, view details)
-   * - System statistics and analytics
-   * - Audit log access
-   * - Support ticket management
-   */
-  ADMIN = 'ADMIN',
+import { Role } from '@prisma/client';
 
-  /**
-   * Support staff role
-   * - View and respond to support tickets
-   * - View user details (limited)
-   * - Cannot modify users or system settings
-   * - Access to support-related audit logs
-   */
-  SUPPORT = 'SUPPORT',
-
-  /**
-   * Standard user role
-   * - Default role for all registered users
-   * - Access to own data and standard features
-   * - Cannot access admin or support endpoints
-   */
-  USER = 'USER',
-}
+// Re-export Role enum from Prisma (single source of truth)
+export { Role };
 
 /**
  * Type guard to check if a string is a valid Role

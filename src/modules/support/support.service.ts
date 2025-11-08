@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { Role } from '../../common/enums/role.enum';
 import {
   CreateTicketDto,
   UpdateTicketDto,

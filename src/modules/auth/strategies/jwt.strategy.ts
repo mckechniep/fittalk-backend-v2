@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { Role } from '@prisma/client';
 
 export interface JwtPayload {
   sub: string;
@@ -24,7 +25,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   phone?: string;
-  role?: string;
+  role: Role; // Database role from User model (required, source of truth)
   sessionId?: string;
   metadata?: Record<string, any>;
 }
@@ -77,7 +78,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // FIRST: Check if user exists, create if not
     let user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        role: true,
+        suspendedAt: true,
+        suspendedBy: true,
+        suspendedReason: true,
         profile: true,
         preferences: true,
       },
@@ -102,7 +110,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             },
           },
         },
-        include: {
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          role: true,
+          suspendedAt: true,
+          suspendedBy: true,
+          suspendedReason: true,
           profile: true,
           preferences: true,
         },
