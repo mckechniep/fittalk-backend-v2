@@ -21,6 +21,8 @@ import { plainToInstance } from 'class-transformer';
 import type { RedisClientType } from 'redis';
 import { REDIS_CLIENT } from '../../../common/redis/redis.module';
 import { ScheduledWorkoutStatus } from '@prisma/client';
+import { NotificationsService } from '../../notifications/notifications.service';
+
 
 /**
  * Scheduling Service
@@ -67,6 +69,7 @@ export class SchedulingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly planner: PlannerService,
+    private notificationsService: NotificationsService, 
     @Inject(REDIS_CLIENT) private readonly redis: RedisClientType,
   ) {}
 
@@ -218,6 +221,9 @@ export class SchedulingService {
       this.logger.log(
         `Successfully scheduled ${persistedScheduled.length}/${workoutDays.length} workouts for week ${weekKey}`,
       );
+
+      // Schedule workout reminders for each workout
+      await this.scheduleWorkoutReminders(userId, persistedScheduled);
 
       return this.buildScheduleResponse(
         dto.weekStart,
@@ -723,6 +729,118 @@ export class SchedulingService {
       handlePrismaError(error, this.logger, 'persist scheduled workouts');
     }
   }
+
+    /**
+     * Schedule workout reminders for all scheduled workouts.
+     * 
+     * Flow:
+     * 1. Get user's reminder preference (default: 30 minutes before)
+     * 2. For each scheduled workout:
+     *    - Calculate reminder time (workout time - reminder minutes)
+     *    - Skip if reminder time is in the past
+     *    - Schedule notification via NotificationsService
+     * 3. Log results
+     * 
+     * Error handling:
+     * - Failures don't block workout scheduling (already saved)
+     * - Errors logged but not thrown
+     * 
+     * @param userId - User ID
+     * @param scheduledWorkouts - Persisted scheduled workouts
+     */
+    private async scheduleWorkoutReminders(
+      userId: string,
+      scheduledWorkouts: any[],
+    ): Promise<void> {
+      if (scheduledWorkouts.length === 0) {
+        return;
+      }
+
+      try {
+        // Get user preferences for reminder timing
+        const preferences = await this.prisma.preference.findUnique({
+          where: { userId },
+          select: { notifPush: true },
+        });
+
+        // Check if user has push notifications enabled
+        if (!preferences?.notifPush) {
+          this.logger.log(
+            `User ${userId} has push notifications disabled - skipping workout reminders`,
+          );
+          return;
+        }
+
+        // Default reminder: 30 minutes before workout
+        // TODO: Add workoutReminderMinutes field to Preference table
+        // For now, use hardcoded 30 minutes
+        const reminderMinutes = 30;
+
+        let successCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+
+        // Schedule reminder for each workout
+        for (const workout of scheduledWorkouts) {
+          try {
+            // Skip if no scheduled time
+            if (!workout.scheduledAt) {
+              skippedCount++;
+              continue;
+            }
+
+            // Calculate reminder time
+            const workoutTime = new Date(workout.scheduledAt);
+            const reminderTime = new Date(
+              workoutTime.getTime() - reminderMinutes * 60 * 1000,
+            );
+
+            // Skip if reminder time is in the past
+            if (reminderTime <= new Date()) {
+              this.logger.debug(
+                `Skipping reminder for workout ${workout.id} - time already passed`,
+              );
+              skippedCount++;
+              continue;
+            }
+
+            // Get workout name for notification
+            const workoutName = workout.day?.focus
+              ? `${workout.day.focus.charAt(0).toUpperCase()}${workout.day.focus.slice(1)} Day`
+              : 'Workout';
+
+            // Schedule the reminder
+            await this.notificationsService.scheduleWorkoutReminder(
+              userId,
+              workout.id,
+              workoutTime,
+              reminderMinutes,
+            );
+
+            this.logger.debug(
+              `Scheduled reminder for ${workoutName} at ${reminderTime.toISOString()}`,
+            );
+            successCount++;
+          } catch (error) {
+            this.logger.error(
+              `Failed to schedule reminder for workout ${workout.id}: ${error.message}`,
+            );
+            errorCount++;
+            // Continue with other reminders
+          }
+        }
+
+        this.logger.log(
+          `Workout reminders: ${successCount} scheduled, ${skippedCount} skipped, ${errorCount} failed`,
+        );
+      } catch (error) {
+        // Don't throw - workout scheduling already succeeded
+        this.logger.error(
+          `Failed to schedule workout reminders: ${error.message}`,
+          error.stack,
+        );
+      }
+    }
 
   /**
    * Build ScheduleWeekResponseDto from persisted data.

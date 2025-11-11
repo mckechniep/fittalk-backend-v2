@@ -14,6 +14,7 @@ import { ConsultationModule } from './modules/consultation/consultation.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLoggingModule } from './modules/workout-logging/workout-logging.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { SupportModule } from './modules/support/support.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -84,6 +85,7 @@ import {
     WorkoutsModule, // Scheduling, live sessions (Phase 1: scheduling only)
     WorkoutLoggingModule, // Workout logging and performance tracking
     NutritionModule, // Nutrition tracking, meal logging, grocery lists
+    NotificationsModule, // Notifications (push, email, WebSocket)
     AdminModule, // Admin operations (user management, system stats, audit logs)
     SupportModule, // Support tickets and customer service
   ],

@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { WorkoutLoggingController } from './workout-logging.controller';
 import { WorkoutLoggingService } from './workout-logging.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module'; 
+
 
 /**
  * Workout Logging Module
@@ -53,6 +55,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 @Module({
     imports: [
         PrismaModule, // Database access (@Global but listed for clarity)
+        NotificationsModule,
     ],
     controllers: [
         WorkoutLoggingController, // /workout-logging routes

@@ -799,6 +799,9 @@ enum NotificationType {
   milestone
   plan_update
   ai_message
+  PLAN_READY
+  WORKOUT_REMINDER
+  PR_ACHIEVED
 }
 
 enum ScheduledWorkoutStatus {

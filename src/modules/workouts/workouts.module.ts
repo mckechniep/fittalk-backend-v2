@@ -11,6 +11,8 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
 import { ConsultationModule } from '../consultation/consultation.module';
 import { WebSocketRateLimiterService } from '../../common/guards/throttler/websocket-rate-limiter.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+
 
 /**
  * Workouts Module
@@ -69,6 +71,7 @@ import { WebSocketRateLimiterService } from '../../common/guards/throttler/webso
     PrismaModule, // Database access (@Global but listed for clarity)
     RedisModule, // Distributed locks, caching, WebSocket adapter (@Global)
     ConsultationModule, // Provides ConsultationService for availability access
+    NotificationsModule,
   ],
   controllers: [
     SchedulingController, // /workouts/schedule routes (Phase 1)

@@ -4,6 +4,7 @@ import { ConsultationController } from './consultation.controller';
 import { AvailabilityController } from './availability.controller';
 import { ConsultationService } from './consultation.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
  * Consultation Module
@@ -42,6 +43,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 @Module({
   imports: [
     PrismaModule, // Provides PrismaService for database access
+    NotificationsModule,
   ],
   controllers: [
     ConsultationController, // /consultation routes

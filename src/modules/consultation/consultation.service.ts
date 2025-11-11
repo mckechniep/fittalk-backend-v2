@@ -21,6 +21,7 @@ import {
   AvailabilityWindowResponseDto,
   AvailabilityWindowDto,
 } from './dtos/availability-window.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Consultation & Availability Service
@@ -42,7 +43,10 @@ import {
 export class ConsultationService {
   private readonly logger = new Logger(ConsultationService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService, // Add this
+  ) {}
 
   // ==================== CONSULTATION SESSION METHODS ====================
 
@@ -99,7 +103,9 @@ export class ConsultationService {
       );
 
       if (!session) {
-        throw new InternalServerErrorException('Failed to create consultation session');
+        throw new InternalServerErrorException(
+          'Failed to create consultation session',
+        );
       }
 
       return this.transformToResponseDto(session);
@@ -108,18 +114,27 @@ export class ConsultationService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           // Unique constraint violation
-          throw new BadRequestException('A consultation session already exists for this user');
+          throw new BadRequestException(
+            'A consultation session already exists for this user',
+          );
         }
         if (error.code === 'P2025') {
           // Record not found
-          throw new NotFoundException('Required resource not found during session creation');
+          throw new NotFoundException(
+            'Required resource not found during session creation',
+          );
         }
       }
 
       // Handle timeout or lock errors
       if (error instanceof Prisma.PrismaClientUnknownRequestError) {
-        this.logger.error('Database transaction failed with unknown error', error);
-        throw new InternalServerErrorException('Failed to create consultation session due to database error');
+        this.logger.error(
+          'Database transaction failed with unknown error',
+          error,
+        );
+        throw new InternalServerErrorException(
+          'Failed to create consultation session due to database error',
+        );
       }
 
       // Re-throw known application exceptions
@@ -132,8 +147,13 @@ export class ConsultationService {
       }
 
       // Log and wrap unexpected errors
-      this.logger.error(`Unexpected error creating consultation session: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('Failed to create consultation session');
+      this.logger.error(
+        `Unexpected error creating consultation session: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'Failed to create consultation session',
+      );
     }
   }
 
@@ -262,18 +282,28 @@ export class ConsultationService {
       // Handle Prisma-specific errors
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2025') {
-          throw new NotFoundException('Consultation session or question not found');
+          throw new NotFoundException(
+            'Consultation session or question not found',
+          );
         }
       }
 
       // Re-throw known application exceptions
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
         throw error;
       }
 
       // Log and wrap unexpected errors
-      this.logger.error(`Failed to update consultation session: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('Failed to update consultation session');
+      this.logger.error(
+        `Failed to update consultation session: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'Failed to update consultation session',
+      );
     }
   }
 
@@ -332,6 +362,21 @@ export class ConsultationService {
         completedAt: new Date(),
       },
     });
+
+    // Send "Plan Ready" notification (push + email with consultation summary)
+    try {
+      await this.notificationsService.sendPlanReadyNotification(
+        userId,
+        sessionId,
+      );
+      this.logger.log(`Sent plan ready notification to user ${userId}`);
+    } catch (error) {
+      // Don't fail consultation completion if notification fails
+      this.logger.error(
+        `Failed to send plan ready notification: ${error.message}`,
+        error.stack,
+      );
+    }
 
     // TODO: Emit event or queue job for AI plan generation
     // await this.eventEmitter.emit('consultation.completed', { userId, sessionId });
@@ -434,7 +479,9 @@ export class ConsultationService {
       // Handle Prisma-specific errors
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
-          throw new BadRequestException('Duplicate availability window detected');
+          throw new BadRequestException(
+            'Duplicate availability window detected',
+          );
         }
       }
 
@@ -444,8 +491,13 @@ export class ConsultationService {
       }
 
       // Log and wrap unexpected errors
-      this.logger.error(`Failed to upsert availability windows: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('Failed to update availability windows');
+      this.logger.error(
+        `Failed to upsert availability windows: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'Failed to update availability windows',
+      );
     }
   }
 
@@ -636,8 +688,8 @@ export class ConsultationService {
         if (a.startMin < b.endMin && b.startMin < a.endMin) {
           throw new BadRequestException(
             `Overlapping availability windows on day ${this.getDayName(a.dayOfWeek)}: ` +
-            `${this.formatMinutes(a.startMin)}-${this.formatMinutes(a.endMin)} overlaps ` +
-            `${this.formatMinutes(b.startMin)}-${this.formatMinutes(b.endMin)}`,
+              `${this.formatMinutes(a.startMin)}-${this.formatMinutes(a.endMin)} overlaps ` +
+              `${this.formatMinutes(b.startMin)}-${this.formatMinutes(b.endMin)}`,
           );
         }
       }
