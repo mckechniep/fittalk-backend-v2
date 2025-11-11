@@ -494,8 +494,8 @@ model ScheduledWorkout {
   status      ScheduledWorkoutStatus @default(scheduled)
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
-  day         WorkoutDay?            @relation(fields: [dayId], references: [id])
-  plan        WorkoutPlan?           @relation(fields: [planId], references: [id])
+  day         WorkoutDay?            @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  plan        WorkoutPlan?           @relation(fields: [planId], references: [id], onDelete: Cascade)
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, scheduledAt])

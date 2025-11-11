@@ -212,7 +212,7 @@ curl -s -X POST "$BASE/workouts/live/sessions/$LIVE_SESSION_ID/events" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "coach.cue",
-    "payload": {
+    "data": {
       "message": "Keep your core tight!"
     }
   }' \

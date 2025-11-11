@@ -70,7 +70,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [
     PrismaModule, // Database access (@Global but listed for clarity)
     RedisModule, // Distributed locks, caching, WebSocket adapter (@Global)
-    ConsultationModule, // Provides ConsultationService for availability access
+    forwardRef(() => ConsultationModule),  // Provides ConsultationService for availability access
     forwardRef(() => NotificationsModule), // forwardRef to break circular dependency
   ],
   controllers: [

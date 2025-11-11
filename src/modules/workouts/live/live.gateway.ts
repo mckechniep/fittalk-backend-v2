@@ -84,18 +84,10 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * Gateway initialization
-   * Configure CORS with allowed origins from environment
    */
+  // Removed dynamic CORS, might need dynamic CORS configuration or possibly move CORS config to the decorater itself
   afterInit() {
-    const corsOrigins = this.configService.get<string[]>('app.corsOrigin') || [];
-
-    // Configure CORS dynamically using allowed origins from config
-    this.server.engine.opts.cors = {
-      origin: corsOrigins.length > 0 ? corsOrigins : false,
-      credentials: true,
-    };
-
-    this.logger.log(`Live WebSocket Gateway initialized with CORS origins: ${corsOrigins.join(', ')}`);
+    this.logger.log('Live WebSocket Gateway initialized');
   }
 
   /**

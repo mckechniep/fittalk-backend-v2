@@ -11,6 +11,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { CommonServicesModule } from './common/services/common-services.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConsultationModule } from './modules/consultation/consultation.module';
+import { ProgramsModule } from './modules/programs/programs.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLoggingModule } from './modules/workout-logging/workout-logging.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
@@ -88,6 +89,7 @@ import {
     NotificationsModule, // Notifications (push, email, WebSocket)
     AdminModule, // Admin operations (user management, system stats, audit logs)
     SupportModule, // Support tickets and customer service
+    ProgramsModule,
   ],
   controllers: [AppController],
   providers: [

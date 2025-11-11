@@ -49,7 +49,7 @@ import { WorkoutsModule } from '../workouts/workouts.module';
 @Module({
   imports: [
     PrismaModule,        // Database access
-    ScheduleModule,      // Cron jobs
+    ScheduleModule.forRoot(),      // Cron jobs
     forwardRef(() => WorkoutsModule),      // Access to LiveGateway for WebSocket (forwardRef to break circular dependency)
   ],
   controllers: [
