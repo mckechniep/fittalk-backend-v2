@@ -386,7 +386,7 @@ export class NotificationsService {
   ): Promise<void> {
     await this.sendNotification({
       userId,
-      type: NotificationType.MILESTONE,
+      type: NotificationType.milestone,
       title: '🎯 Milestone Achieved!',
       body: milestoneText,
       meta: {

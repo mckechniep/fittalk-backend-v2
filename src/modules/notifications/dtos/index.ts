@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { NotificationType } from '@prisma/client';
+import { JsonValue } from '@prisma/client/runtime/library';
 
 /**
  * DTO for sending a notification
@@ -79,7 +80,7 @@ export class NotificationResponseDto {
   body: string | null;
   sentAt: Date | null;
   scheduledAt: Date | null;
-  meta: Record<string, any> | null;
+  meta: JsonValue | null;
   createdAt: Date;
 
   constructor(partial: Partial<NotificationResponseDto>) {
