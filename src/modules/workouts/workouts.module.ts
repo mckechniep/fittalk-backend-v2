@@ -1,5 +1,5 @@
 // workouts.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { SchedulingController } from './scheduling/scheduling.controller';
 import { SchedulingService } from './scheduling/scheduling.service';
 import { PlannerService } from './scheduling/planner.service';
@@ -71,7 +71,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     PrismaModule, // Database access (@Global but listed for clarity)
     RedisModule, // Distributed locks, caching, WebSocket adapter (@Global)
     ConsultationModule, // Provides ConsultationService for availability access
-    NotificationsModule,
+    forwardRef(() => NotificationsModule), // forwardRef to break circular dependency
   ],
   controllers: [
     SchedulingController, // /workouts/schedule routes (Phase 1)

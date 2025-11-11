@@ -67,10 +67,7 @@ interface AuthenticatedSocket extends Socket {
  */
 @WebSocketGateway({
   namespace: '/live',
-  cors: {
-    origin: '*', // Configure properly in production
-    credentials: true,
-  },
+  cors: true, // Will be configured dynamically in afterInit
 })
 export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -87,9 +84,18 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /**
    * Gateway initialization
+   * Configure CORS with allowed origins from environment
    */
   afterInit() {
-    this.logger.log('Live WebSocket Gateway initialized');
+    const corsOrigins = this.configService.get<string[]>('app.corsOrigin') || [];
+
+    // Configure CORS dynamically using allowed origins from config
+    this.server.engine.opts.cors = {
+      origin: corsOrigins.length > 0 ? corsOrigins : false,
+      credentials: true,
+    };
+
+    this.logger.log(`Live WebSocket Gateway initialized with CORS origins: ${corsOrigins.join(', ')}`);
   }
 
   /**
