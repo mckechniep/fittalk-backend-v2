@@ -3,7 +3,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
@@ -23,14 +23,15 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('app.port') ?? 3000;
   const corsOrigins = configService.get<string[]>('app.corsOrigin');
+  const logger = new Logger('Bootstrap');
 
   // Security middleware
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: [`'self'`],
-        styleSrc: [`'self'`, `'unsafe-inline'`],
-        scriptSrc: [`'self'`, `'unsafe-inline'`, `'unsafe-eval'`],
+        styleSrc: [`'self'`],
+        scriptSrc: [`'self'`],
         imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
         fontSrc: [`'self'`, 'fonts.gstatic.com', 'data:'],
       },
@@ -65,7 +66,7 @@ async function bootstrap() {
 
   // Start server
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Application is running on: ${await app.getUrl()}`);
+  logger.log(`🚀 Application is running on: ${await app.getUrl()}`);
 }
 
 bootstrap();

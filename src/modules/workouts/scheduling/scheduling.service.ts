@@ -669,6 +669,33 @@ export class SchedulingService {
       return await this.prisma.$transaction(async (tx) => {
         // If regenerate, delete existing scheduled workouts for this week
         if (regenerate) {
+          // Calculate the reminder time window for this week
+          // Notifications are scheduled 30 minutes before workouts
+          const reminderWindowStart = new Date(weekStart);
+          reminderWindowStart.setMinutes(reminderWindowStart.getMinutes() - 30);
+          const reminderWindowEnd = new Date(weekEnd);
+
+          // Delete orphaned workout reminder notifications for this week
+          // These are scheduled notifications that haven't been sent yet
+          const deletedNotifications = await tx.notification.deleteMany({
+            where: {
+              userId,
+              type: 'WORKOUT_REMINDER',
+              sentAt: null, // Only delete unsent scheduled notifications
+              scheduledAt: {
+                gte: reminderWindowStart,
+                lt: reminderWindowEnd,
+              },
+            },
+          });
+
+          if (deletedNotifications.count > 0) {
+            this.logger.log(
+              `Deleted ${deletedNotifications.count} orphaned notification(s) for regenerated workouts`,
+            );
+          }
+
+          // Now delete the scheduled workouts
           const deleted = await tx.scheduledWorkout.deleteMany({
             where: {
               userId,

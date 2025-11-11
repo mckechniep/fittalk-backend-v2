@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
@@ -50,7 +50,7 @@ import { WorkoutsModule } from '../workouts/workouts.module';
   imports: [
     PrismaModule,        // Database access
     ScheduleModule,      // Cron jobs
-    WorkoutsModule,      // Access to LiveGateway for WebSocket
+    forwardRef(() => WorkoutsModule),      // Access to LiveGateway for WebSocket (forwardRef to break circular dependency)
   ],
   controllers: [
     NotificationsController, // HTTP endpoints
