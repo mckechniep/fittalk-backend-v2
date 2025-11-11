@@ -1,5 +1,5 @@
 // consultation.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConsultationController } from './consultation.controller';
 import { AvailabilityController } from './availability.controller';
 import { ConsultationService } from './consultation.service';
@@ -43,7 +43,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 @Module({
   imports: [
     PrismaModule, // Provides PrismaService for database access
-    NotificationsModule,
+    forwardRef(() => NotificationsModule), // forwardRef to break circular dependency
   ],
   controllers: [
     ConsultationController, // /consultation routes
