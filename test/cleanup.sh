@@ -75,12 +75,12 @@ for WEEK_OFFSET in -6 -5 -4 -3 -2 -1 0 1 2 3 4 5; do
   # Extract IDs from response
   WORKOUT_IDS=$(echo "$WEEK_WORKOUTS" | jq -r '.[]?.id // empty' 2>/dev/null || echo "")
   
-  # Delete each workout (this actually DELETES, not just cancels)
+  # Delete each workout (using hard-delete endpoint to actually DELETE from database)
   for WORKOUT_ID in $WORKOUT_IDS; do
     if [ -n "$WORKOUT_ID" ] && [ "$WORKOUT_ID" != "null" ]; then
-      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/workouts/schedule/$WORKOUT_ID" \
+      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE/workouts/schedule/$WORKOUT_ID/hard-delete" \
         -H "Authorization: Bearer $JWT_TOKEN" 2>/dev/null || echo "000")
-      
+
       if [ "$HTTP_STATUS" == "204" ] || [ "$HTTP_STATUS" == "200" ]; then
         ((DELETED_WORKOUTS++))
       else
