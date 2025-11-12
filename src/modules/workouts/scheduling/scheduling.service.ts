@@ -411,6 +411,63 @@ export class SchedulingService {
     }
   }
 
+  /**
+   * Permanently delete a scheduled workout from the database.
+   *
+   * ⚠️ WARNING: This is a destructive operation - use with caution!
+   * Unlike cancelScheduledWorkout(), this ACTUALLY deletes the record.
+   *
+   * Security: Verifies user owns the scheduled workout
+   *
+   * Use cases:
+   * - Test cleanup scripts
+   * - Admin operations
+   * - Removing cancelled workouts completely
+   *
+   * @param userId - User ID from JWT
+   * @param scheduledWorkoutId - ID of workout to permanently delete
+   */
+  async hardDeleteScheduledWorkout(
+    userId: string,
+    scheduledWorkoutId: string,
+  ): Promise<void> {
+    try {
+      const workout = await this.prisma.scheduledWorkout.findUnique({
+        where: { id: scheduledWorkoutId },
+      });
+
+      if (!workout) {
+        throw new NotFoundException({
+          message: 'Scheduled workout not found',
+          error: 'WorkoutNotFound',
+        });
+      }
+
+      if (workout.userId !== userId) {
+        this.logger.warn(
+          `User ${userId} attempted to hard delete workout ${scheduledWorkoutId} owned by ${workout.userId}`,
+        );
+        throw new ForbiddenException({
+          message: 'You do not have access to this workout',
+          error: 'WorkoutAccessDenied',
+        });
+      }
+
+      this.logger.log(`Hard deleting scheduled workout ${scheduledWorkoutId} for user ${userId}`);
+
+      await this.prisma.scheduledWorkout.delete({
+        where: { id: scheduledWorkoutId },
+      });
+
+      this.logger.log(`Successfully hard deleted scheduled workout ${scheduledWorkoutId}`);
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      handlePrismaError(error, this.logger, 'hard delete scheduled workout');
+    }
+  }
+
   // ==================== PRIVATE HELPER METHODS ====================
 
   /**

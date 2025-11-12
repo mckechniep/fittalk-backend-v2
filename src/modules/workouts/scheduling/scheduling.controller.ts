@@ -238,4 +238,49 @@ export class SchedulingController {
       scheduledWorkoutId,
     );
   }
+
+  /**
+   * DELETE /workouts/schedule/:id/hard-delete
+   *
+   * Permanently delete a scheduled workout from the database.
+   *
+   * ⚠️ WARNING: This is a destructive operation that removes the record entirely.
+   * Unlike the soft-cancel DELETE /:id endpoint, this ACTUALLY deletes the record.
+   *
+   * Security:
+   * - Verifies user owns the scheduled workout
+   * - Returns 403 if attempting to delete another user's workout
+   *
+   * Use cases:
+   * - Test cleanup scripts
+   * - Admin operations to remove orphaned data
+   * - Cleanup of cancelled workouts that need to be fully removed
+   *
+   * Side effects:
+   * - Permanently removes the ScheduledWorkout record
+   * - No way to recover the data after deletion
+   * - Analytics/audit trails are lost
+   *
+   * Returns: 204 No Content on success
+   *
+   * Throws:
+   * - 404 if workout not found
+   * - 403 if user doesn't own the workout
+   *
+   * Example:
+   * DELETE /workouts/schedule/uuid-123/hard-delete
+   * → 204 No Content
+   */
+  @Delete(':id/hard-delete')
+  @StandardDelete() // 10/min - hard deleting scheduled workouts
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async hardDeleteScheduledWorkout(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) scheduledWorkoutId: string,
+  ): Promise<void> {
+    return this.schedulingService.hardDeleteScheduledWorkout(
+      userId,
+      scheduledWorkoutId,
+    );
+  }
 }
