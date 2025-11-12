@@ -280,7 +280,7 @@ export class SchedulingService {
             lt: endDate,
           },
           ...(planId && { planId }),
-          ...(status && { status }),
+          ...(status ? { status } : { status: { notIn: ['cancelled'] } }),
         },
         include: {
           plan: true,
@@ -618,6 +618,11 @@ export class SchedulingService {
         scheduledAt: {
           gte: weekStart,
           lt: weekEnd,
+        },
+        // CRITICAL FIX: Only consider active workouts for overlap detection
+      // Exclude cancelled, completed, and skipped workouts
+        status: {
+          in: ['scheduled', 'in_progress'],
         },
       },
       include: {

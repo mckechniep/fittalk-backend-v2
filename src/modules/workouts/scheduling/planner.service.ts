@@ -458,10 +458,10 @@ export class PlannerService {
     occupiedSlots: OccupiedSlot[],
   ): string {
     // Check if any windows on this day of week
-    const dayWindows = windows.filter((w) => w.dayOfWeek === day.dayNumber - 1);
+    const dayWindows = windows.filter((w) => w.dayOfWeek === day.dayNumber % 7);
 
     if (dayWindows.length === 0) {
-      return `No availability set for ${this.getDayName(day.dayNumber - 1)}`;
+      return `No availability set for ${this.getDayName(day.dayNumber % 7)}`;
     }
 
     // Check if workout is too long for any window
@@ -469,7 +469,7 @@ export class PlannerService {
       ...dayWindows.map((w) => w.endMin - w.startMin),
     );
     if (durationMin > longestWindow) {
-      return `Workout duration (${durationMin} min) exceeds largest available window (${longestWindow} min) on ${this.getDayName(day.dayNumber - 1)}`;
+      return `Workout duration (${durationMin} min) exceeds largest available window (${longestWindow} min) on ${this.getDayName(day.dayNumber % 7)}`;
     }
 
     // Check if all windows are occupied
@@ -483,11 +483,11 @@ export class PlannerService {
     });
 
     if (allOccupied) {
-      return `All available time slots on ${this.getDayName(day.dayNumber - 1)} are already occupied`;
+      return `All available time slots on ${this.getDayName(day.dayNumber % 7)} are already occupied`;
     }
 
     // Generic fallback
-    return `Unable to find suitable time slot on ${this.getDayName(day.dayNumber - 1)}`;
+    return `Unable to find suitable time slot on ${this.getDayName(day.dayNumber % 7)}`;
   }
 
   /**
