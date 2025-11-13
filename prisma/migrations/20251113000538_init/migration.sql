@@ -1,5 +1,20 @@
 -- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
+
+-- CreateExtension
 CREATE EXTENSION IF NOT EXISTS "vector";
+
+-- CreateEnum
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'SUPPORT', 'USER');
+
+-- CreateEnum
+CREATE TYPE "TicketCategory" AS ENUM ('TECHNICAL_ISSUE', 'ACCOUNT_ISSUE', 'BILLING', 'FEATURE_REQUEST', 'BUG_REPORT', 'GENERAL_INQUIRY', 'OTHER');
+
+-- CreateEnum
+CREATE TYPE "TicketPriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+
+-- CreateEnum
+CREATE TYPE "TicketStatus" AS ENUM ('OPEN', 'IN_PROGRESS', 'WAITING_FOR_USER', 'WAITING_FOR_SUPPORT', 'RESOLVED', 'CLOSED');
 
 -- CreateEnum
 CREATE TYPE "Sex" AS ENUM ('male', 'female', 'other', 'prefer_not_to_say');
@@ -32,7 +47,7 @@ CREATE TYPE "PlanStatus" AS ENUM ('draft', 'active', 'archived');
 CREATE TYPE "SessionType" AS ENUM ('strength', 'hypertrophy', 'cardio', 'mobility', 'mixed');
 
 -- CreateEnum
-CREATE TYPE "NotificationType" AS ENUM ('reminder', 'milestone', 'plan_update', 'ai_message');
+CREATE TYPE "NotificationType" AS ENUM ('reminder', 'milestone', 'plan_update', 'ai_message', 'PLAN_READY', 'WORKOUT_REMINDER', 'PR_ACHIEVED');
 
 -- CreateEnum
 CREATE TYPE "ScheduledWorkoutStatus" AS ENUM ('scheduled', 'in_progress', 'completed', 'skipped', 'cancelled');
@@ -45,6 +60,10 @@ CREATE TABLE "User" (
     "passwordHash" VARCHAR(255),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "role" "Role" NOT NULL DEFAULT 'USER',
+    "suspendedAt" TIMESTAMP(3),
+    "suspendedBy" TEXT,
+    "suspendedReason" TEXT,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -258,7 +277,7 @@ CREATE TABLE "DocumentChunk" (
 CREATE TABLE "Embedding" (
     "id" TEXT NOT NULL,
     "chunkId" TEXT NOT NULL,
-    "embedding" vector(1536),
+    "embedding" vector,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Embedding_pkey" PRIMARY KEY ("id")
@@ -292,6 +311,7 @@ CREATE TABLE "MacroTarget" (
     "endsOn" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "MacroTarget_pkey" PRIMARY KEY ("id")
 );
@@ -310,6 +330,7 @@ CREATE TABLE "FoodItem" (
     "source" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "FoodItem_pkey" PRIMARY KEY ("id")
 );
@@ -322,6 +343,7 @@ CREATE TABLE "GroceryList" (
     "weekOf" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "GroceryList_pkey" PRIMARY KEY ("id")
 );
@@ -338,6 +360,32 @@ CREATE TABLE "GroceryItem" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "GroceryItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MealLog" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "mealType" TEXT NOT NULL,
+    "loggedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "notes" TEXT,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MealLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MealEntry" (
+    "id" TEXT NOT NULL,
+    "mealLogId" TEXT NOT NULL,
+    "foodItemId" TEXT NOT NULL,
+    "servings" DECIMAL(6,2) NOT NULL,
+    "servingG" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MealEntry_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -411,6 +459,7 @@ CREATE TABLE "WorkoutItem" (
     "restSec" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "notes" TEXT,
 
     CONSTRAINT "WorkoutItem_pkey" PRIMARY KEY ("id")
 );
@@ -536,6 +585,51 @@ CREATE TABLE "AuditLog" (
     CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "SupportTicket" (
+    "id" TEXT NOT NULL,
+    "ticketNumber" SERIAL NOT NULL,
+    "userId" TEXT NOT NULL,
+    "assigneeId" TEXT,
+    "subject" TEXT NOT NULL,
+    "category" "TicketCategory" NOT NULL,
+    "priority" "TicketPriority" NOT NULL DEFAULT 'MEDIUM',
+    "status" "TicketStatus" NOT NULL DEFAULT 'OPEN',
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "resolvedAt" TIMESTAMP(3),
+    "closedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SupportTicket_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TicketMessage" (
+    "id" TEXT NOT NULL,
+    "ticketId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "isInternal" BOOLEAN NOT NULL DEFAULT false,
+    "attachments" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TicketMessage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TicketActivity" (
+    "id" TEXT NOT NULL,
+    "ticketId" TEXT NOT NULL,
+    "userId" TEXT,
+    "action" TEXT NOT NULL,
+    "details" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TicketActivity_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -544,6 +638,9 @@ CREATE UNIQUE INDEX "User_phone_key" ON "User"("phone");
 
 -- CreateIndex
 CREATE INDEX "User_email_idx" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "User_role_idx" ON "User"("role");
 
 -- CreateIndex
 CREATE INDEX "AuthAccount_userId_idx" ON "AuthAccount"("userId");
@@ -624,16 +721,46 @@ CREATE INDEX "UserGoal_userId_status_idx" ON "UserGoal"("userId", "status");
 CREATE INDEX "MacroTarget_userId_startsOn_idx" ON "MacroTarget"("userId", "startsOn");
 
 -- CreateIndex
+CREATE INDEX "MacroTarget_deletedAt_idx" ON "MacroTarget"("deletedAt");
+
+-- CreateIndex
+CREATE INDEX "MacroTarget_userId_deletedAt_startsOn_idx" ON "MacroTarget"("userId", "deletedAt", "startsOn");
+
+-- CreateIndex
 CREATE INDEX "FoodItem_name_idx" ON "FoodItem"("name");
 
 -- CreateIndex
+CREATE INDEX "FoodItem_deletedAt_idx" ON "FoodItem"("deletedAt");
+
+-- CreateIndex
 CREATE INDEX "GroceryList_userId_weekOf_idx" ON "GroceryList"("userId", "weekOf");
+
+-- CreateIndex
+CREATE INDEX "GroceryList_deletedAt_idx" ON "GroceryList"("deletedAt");
+
+-- CreateIndex
+CREATE INDEX "GroceryList_userId_deletedAt_idx" ON "GroceryList"("userId", "deletedAt");
 
 -- CreateIndex
 CREATE INDEX "GroceryItem_listId_idx" ON "GroceryItem"("listId");
 
 -- CreateIndex
 CREATE INDEX "GroceryItem_foodItemId_idx" ON "GroceryItem"("foodItemId");
+
+-- CreateIndex
+CREATE INDEX "MealLog_userId_loggedAt_idx" ON "MealLog"("userId", "loggedAt");
+
+-- CreateIndex
+CREATE INDEX "MealLog_deletedAt_idx" ON "MealLog"("deletedAt");
+
+-- CreateIndex
+CREATE INDEX "MealLog_userId_deletedAt_idx" ON "MealLog"("userId", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "MealEntry_mealLogId_idx" ON "MealEntry"("mealLogId");
+
+-- CreateIndex
+CREATE INDEX "MealEntry_foodItemId_idx" ON "MealEntry"("foodItemId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Exercise_slug_key" ON "Exercise"("slug");
@@ -670,6 +797,9 @@ CREATE INDEX "ScheduledWorkout_planId_idx" ON "ScheduledWorkout"("planId");
 
 -- CreateIndex
 CREATE INDEX "ScheduledWorkout_dayId_idx" ON "ScheduledWorkout"("dayId");
+
+-- CreateIndex
+CREATE INDEX "ScheduledWorkout_userId_status_scheduledAt_idx" ON "ScheduledWorkout"("userId", "status", "scheduledAt");
 
 -- CreateIndex
 CREATE INDEX "LiveWorkoutSession_userId_idx" ON "LiveWorkoutSession"("userId");
@@ -728,6 +858,33 @@ CREATE INDEX "AuditLog_entityType_entityId_idx" ON "AuditLog"("entityType", "ent
 -- CreateIndex
 CREATE INDEX "AuditLog_action_idx" ON "AuditLog"("action");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "SupportTicket_ticketNumber_key" ON "SupportTicket"("ticketNumber");
+
+-- CreateIndex
+CREATE INDEX "SupportTicket_userId_idx" ON "SupportTicket"("userId");
+
+-- CreateIndex
+CREATE INDEX "SupportTicket_assigneeId_idx" ON "SupportTicket"("assigneeId");
+
+-- CreateIndex
+CREATE INDEX "SupportTicket_status_priority_idx" ON "SupportTicket"("status", "priority");
+
+-- CreateIndex
+CREATE INDEX "SupportTicket_category_idx" ON "SupportTicket"("category");
+
+-- CreateIndex
+CREATE INDEX "SupportTicket_createdAt_idx" ON "SupportTicket"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "TicketMessage_ticketId_createdAt_idx" ON "TicketMessage"("ticketId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "TicketMessage_userId_idx" ON "TicketMessage"("userId");
+
+-- CreateIndex
+CREATE INDEX "TicketActivity_ticketId_createdAt_idx" ON "TicketActivity"("ticketId", "createdAt");
+
 -- AddForeignKey
 ALTER TABLE "AuthAccount" ADD CONSTRAINT "AuthAccount_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -744,13 +901,13 @@ ALTER TABLE "Preference" ADD CONSTRAINT "Preference_userId_fkey" FOREIGN KEY ("u
 ALTER TABLE "Device" ADD CONSTRAINT "Device_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserHealthCondition" ADD CONSTRAINT "UserHealthCondition_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "UserHealthCondition" ADD CONSTRAINT "UserHealthCondition_healthConditionId_fkey" FOREIGN KEY ("healthConditionId") REFERENCES "HealthCondition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserHealthCondition" ADD CONSTRAINT "UserHealthCondition_profile_fkey" FOREIGN KEY ("userId") REFERENCES "Profile"("userId") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserHealthCondition" ADD CONSTRAINT "UserHealthCondition_healthConditionId_fkey" FOREIGN KEY ("healthConditionId") REFERENCES "HealthCondition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "UserHealthCondition" ADD CONSTRAINT "UserHealthCondition_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AvailabilityWindow" ADD CONSTRAINT "AvailabilityWindow_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -759,10 +916,10 @@ ALTER TABLE "AvailabilityWindow" ADD CONSTRAINT "AvailabilityWindow_userId_fkey"
 ALTER TABLE "ConsultationSession" ADD CONSTRAINT "ConsultationSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ConsultationAnswer" ADD CONSTRAINT "ConsultationAnswer_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "ConsultationSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ConsultationAnswer" ADD CONSTRAINT "ConsultationAnswer_questionId_fkey" FOREIGN KEY ("questionId") REFERENCES "ConsultationQuestion"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ConsultationAnswer" ADD CONSTRAINT "ConsultationAnswer_questionId_fkey" FOREIGN KEY ("questionId") REFERENCES "ConsultationQuestion"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ConsultationAnswer" ADD CONSTRAINT "ConsultationAnswer_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "ConsultationSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AiMessage" ADD CONSTRAINT "AiMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -789,10 +946,19 @@ ALTER TABLE "MacroTarget" ADD CONSTRAINT "MacroTarget_userId_fkey" FOREIGN KEY (
 ALTER TABLE "GroceryList" ADD CONSTRAINT "GroceryList_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "GroceryItem" ADD CONSTRAINT "GroceryItem_foodItemId_fkey" FOREIGN KEY ("foodItemId") REFERENCES "FoodItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "GroceryItem" ADD CONSTRAINT "GroceryItem_listId_fkey" FOREIGN KEY ("listId") REFERENCES "GroceryList"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "GroceryItem" ADD CONSTRAINT "GroceryItem_foodItemId_fkey" FOREIGN KEY ("foodItemId") REFERENCES "FoodItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "MealLog" ADD CONSTRAINT "MealLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MealEntry" ADD CONSTRAINT "MealEntry_foodItemId_fkey" FOREIGN KEY ("foodItemId") REFERENCES "FoodItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MealEntry" ADD CONSTRAINT "MealEntry_mealLogId_fkey" FOREIGN KEY ("mealLogId") REFERENCES "MealLog"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ExerciseVariant" ADD CONSTRAINT "ExerciseVariant_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -810,37 +976,37 @@ ALTER TABLE "WorkoutItem" ADD CONSTRAINT "WorkoutItem_dayId_fkey" FOREIGN KEY ("
 ALTER TABLE "WorkoutItem" ADD CONSTRAINT "WorkoutItem_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ScheduledWorkout" ADD CONSTRAINT "ScheduledWorkout_dayId_fkey" FOREIGN KEY ("dayId") REFERENCES "WorkoutDay"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ScheduledWorkout" ADD CONSTRAINT "ScheduledWorkout_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ScheduledWorkout" ADD CONSTRAINT "ScheduledWorkout_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ScheduledWorkout" ADD CONSTRAINT "ScheduledWorkout_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ScheduledWorkout" ADD CONSTRAINT "ScheduledWorkout_dayId_fkey" FOREIGN KEY ("dayId") REFERENCES "WorkoutDay"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "LiveWorkoutSession" ADD CONSTRAINT "LiveWorkoutSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "LiveWorkoutSession" ADD CONSTRAINT "LiveWorkoutSession_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "LiveWorkoutSession" ADD CONSTRAINT "LiveWorkoutSession_dayId_fkey" FOREIGN KEY ("dayId") REFERENCES "WorkoutDay"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "LiveWorkoutSession" ADD CONSTRAINT "LiveWorkoutSession_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "LiveWorkoutSession" ADD CONSTRAINT "LiveWorkoutSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_dayId_fkey" FOREIGN KEY ("dayId") REFERENCES "WorkoutDay"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "WorkoutItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_planId_fkey" FOREIGN KEY ("planId") REFERENCES "WorkoutPlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WorkoutLog" ADD CONSTRAINT "WorkoutLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "WorkoutSet" ADD CONSTRAINT "WorkoutSet_logId_fkey" FOREIGN KEY ("logId") REFERENCES "WorkoutLog"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -849,13 +1015,32 @@ ALTER TABLE "WorkoutSet" ADD CONSTRAINT "WorkoutSet_logId_fkey" FOREIGN KEY ("lo
 ALTER TABLE "BodyMetric" ADD CONSTRAINT "BodyMetric_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PersonalRecord" ADD CONSTRAINT "PersonalRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "PersonalRecord" ADD CONSTRAINT "PersonalRecord_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PersonalRecord" ADD CONSTRAINT "PersonalRecord_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PersonalRecord" ADD CONSTRAINT "PersonalRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SupportTicket" ADD CONSTRAINT "SupportTicket_assigneeId_fkey" FOREIGN KEY ("assigneeId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SupportTicket" ADD CONSTRAINT "SupportTicket_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TicketMessage" ADD CONSTRAINT "TicketMessage_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES "SupportTicket"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TicketMessage" ADD CONSTRAINT "TicketMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TicketActivity" ADD CONSTRAINT "TicketActivity_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES "SupportTicket"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TicketActivity" ADD CONSTRAINT "TicketActivity_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
