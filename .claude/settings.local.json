@@ -5,7 +5,11 @@
       "Bash(npm run build:*)",
       "Bash(awk:*)",
       "Bash(xargs kill)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(pnpm test:e2e:*)",
+      "Bash(THROTTLE_LIMIT=10000 THROTTLE_TTL=60000 pnpm test:e2e:*)",
+      "Bash(pnpm prisma db seed:*)",
+      "Bash(pnpm seed:exercises:*)"
     ],
     "deny": [],
     "ask": []

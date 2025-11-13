@@ -6,15 +6,18 @@ import {
   Min,
   Max,
   IsDecimal,
+  IsNotEmpty,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { Sex, ExperienceLevel, GoalType, UnitSystem } from '@prisma/client';
 
 export class CreateProfileDto {
   @IsString()
+  @IsNotEmpty()
   firstname: string;
 
   @IsString()
+  @IsNotEmpty()
   lastname: string;
 
   @IsOptional()

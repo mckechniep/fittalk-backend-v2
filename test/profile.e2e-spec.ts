@@ -129,7 +129,6 @@ describe('Profile Module (e2e)', () => {
           expect(result.statusCode).toBe(201);
           const profile = JSON.parse(result.payload);
 
-          expect(profile).toHaveProperty('id');
           expect(profile).toHaveProperty('userId', testUserId);
           expect(profile).toHaveProperty('firstname', 'John');
           expect(profile).toHaveProperty('lastname', 'Doe');

@@ -684,8 +684,10 @@ export class ConsultationService {
         // Only check same day
         if (a.dayOfWeek !== b.dayOfWeek) continue;
 
-        // Check overlap: A.start < B.end AND B.start < A.end
-        if (a.startMin < b.endMin && b.startMin < a.endMin) {
+        // Check overlap: A.start < B.end AND B.start <= A.end
+        // Note: We treat edge-sharing windows (A.end == B.start) as overlapping
+        // This ensures no time slots can be double-booked, even at boundaries
+        if (a.startMin < b.endMin && b.startMin <= a.endMin) {
           throw new BadRequestException(
             `Overlapping availability windows on day ${this.getDayName(a.dayOfWeek)}: ` +
               `${this.formatMinutes(a.startMin)}-${this.formatMinutes(a.endMin)} overlaps ` +

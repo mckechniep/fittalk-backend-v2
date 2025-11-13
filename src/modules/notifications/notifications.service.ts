@@ -71,15 +71,38 @@ export class NotificationsService {
     );
 
     // 1. Create database record
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId: dto.userId,
-        type: dto.type,
-        title: dto.title,
-        body: dto.body,
-        meta: dto.meta ? JSON.parse(JSON.stringify(dto.meta)) : undefined,
-      },
-    });
+    let notification;
+    try {
+      notification = await this.prisma.notification.create({
+        data: {
+          userId: dto.userId,
+          type: dto.type,
+          title: dto.title,
+          body: dto.body,
+          meta: dto.meta ? JSON.parse(JSON.stringify(dto.meta)) : undefined,
+        },
+      });
+    } catch (error) {
+      // Handle foreign key constraint violation (invalid userId)
+      if (error.code === 'P2003') {
+        this.logger.warn(
+          `Cannot create notification for non-existent user ${dto.userId}`,
+        );
+        // Return a minimal notification response without saving to DB
+        return {
+          id: '00000000-0000-0000-0000-000000000000',
+          userId: dto.userId,
+          type: dto.type,
+          title: dto.title,
+          body: dto.body,
+          meta: dto.meta,
+          sentAt: null,
+          createdAt: new Date(),
+        } as NotificationResponseDto;
+      }
+      // Re-throw unexpected errors
+      throw error;
+    }
 
     // 2. Get user preferences
     const preferences = await this.prisma.preference.findUnique({

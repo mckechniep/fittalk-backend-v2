@@ -113,6 +113,12 @@ export class ProgramsService {
       const program = await this.prisma.workoutPlan.findUnique({
         where: { id: programId },
         include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+            },
+          },
           days: {
             orderBy: [
               { weekNumber: 'asc' },
